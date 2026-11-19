@@ -29,7 +29,7 @@ export class Santa {
     this.root = new THREE.Group();
     this.build(T);
     const [cx, cz] = castle.center(...castle.santaCell);
-    this.s = { x: cx, z: cz, yaw: 0, headYaw: 0, headPitch: 0, mode: 'wander', speed: 0, hp: 3 };
+    this.s = { x: cx, z: cz, yaw: 0, headYaw: 0, headPitch: 0, mode: 'wander', speed: 0, hp: 1 };
     this.v = { x: cx, z: cz, yaw: 0, headYaw: 0, headPitch: 0, phase: 0, reach: 0, jaw: 0, duck: 0, death: 0, shake: 0, lastPlant: [0, 0], blinkT: 6, blink: -1 };
     this.ai = { t: 0, modeT: 0, menace: 0, sus: {}, path: null, pi: 0, percT: 0, lostT: 0, relief: 26, rage: 0, lungeT: 0, lungeCd: 0, stuckT: 0, lastPos: [cx, cz], repathT: 0 };
     this.twitches = [];
@@ -236,7 +236,7 @@ export class Santa {
     if (d < 0.02) return d;
     const step = Math.min(d, speed * dt);
     const p = { x: s.x + (dx / d) * step, z: s.z + (dz / d) * step };
-    this.castle.collide(p, 0.42);
+    this.castle.collide(p, 0.42, true);
     s.x = p.x; s.z = p.z;
     s.yaw = dampAngle(s.yaw, Math.atan2(dx, dz), speed > 3 ? 9 : 5, dt);
     s.speed = speed;
@@ -327,10 +327,10 @@ export class Santa {
         if (!target) { this.startSearch(3); break; }
         const dx = target.x - s.x, dz = target.z - s.z, d = Math.hypot(dx, dz);
         const los = target._los ?? C.lineOfSight(s.x, s.z, target.x, target.z);
-        let speed = 4.45 + ai.rage * 0.35;
-        if (ai.lungeT > 0) { ai.lungeT -= dt; speed = 7.2; if (ai.lungeT <= 0) ai.lungeCd = 1.7; }
-        else if (ai.lungeCd > 1.2) speed = 3.0;
-        else if (d < 3.4 && los && ai.lungeCd <= 0) ai.lungeT = 0.38;
+        let speed = 4.0 + ai.rage * 0.3;
+        if (ai.lungeT > 0) { ai.lungeT -= dt; speed = 6.4; if (ai.lungeT <= 0) ai.lungeCd = 2.0; }
+        else if (ai.lungeCd > 1.3) speed = 2.6;
+        else if (d < 2.8 && los && ai.lungeCd <= 0) ai.lungeT = 0.32;
         if (los) {
           ai.lastSeen = [target.x, target.z]; ai.lostT = 0; ai.path = null;
           this.moveToward(target.x, target.z, speed, dt);
@@ -338,7 +338,7 @@ export class Santa {
           ai.lostT += dt;
           ai.repathT -= dt;
           if (!ai.path || ai.repathT <= 0) { this.setPath(ai.lastSeen[0], ai.lastSeen[1]); ai.repathT = 0.8; }
-          if (this.followPath(speed * 0.92, dt) || ai.lostT > 6.5) { ai.huntAfter = target.id; this.startSearch(R(2.5, 4)); ai.relief = 0; }
+          if (this.followPath(speed * 0.9, dt) || ai.lostT > 5) { ai.huntAfter = target.id; this.startSearch(R(2.5, 4)); ai.relief = 0; }
         }
         if (d < 1.1 && !target.safe) {
           W.emit({ k: 'caught', id: target.id });
@@ -429,7 +429,7 @@ export class Santa {
       if (s.mode === 'retreat' && best._d > 6) return;
       this.setMode('notice');
       ai.targetId = best.id;
-      ai.noticeDur = best._d < 5 ? 0.22 : R(0.45, 0.85);
+      ai.noticeDur = best._d < 5 ? 0.32 : R(0.55, 0.95);
       ai.menace = 0;
     } else if (best && ai.sus[best.id] > 0.3 && !busy) ai.glance = best.id;
   }

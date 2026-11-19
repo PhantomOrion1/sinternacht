@@ -93,6 +93,61 @@ export class Items {
     gr.addColorStop(0, '#fffaf0'); gr.addColorStop(0.35, '#ffd9a0'); gr.addColorStop(0.8, '#7a4a20'); gr.addColorStop(1, '#1a0e06');
     x.fillStyle = gr; x.fillRect(0, 0, 64, 128);
     this.portalTex = new THREE.CanvasTexture(c); this.portalTex.colorSpace = THREE.SRGBColorSpace;
+    this.initPassages();
+  }
+
+  // ---------- hidden passages (pivoting wall panels) ----------
+  initPassages() {
+    this.passages = this.castle.passages || [];
+    for (const P of this.passages) if (P.vault) P.active = true;
+    const R2 = (a, b) => a + Math.random() * (b - a);
+    for (const P of this.passages) {
+      const g = new THREE.Group();
+      g.position.set(P.x, 0, P.z);
+      g.rotation.y = P.alongX ? 0 : -Math.PI / 2;
+      const mat = new THREE.MeshBasicMaterial({ color: 0xa8b8c8, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, opacity: 0 });
+      const hw = P.PW / 2, H = P.PH;
+      for (const side of [-1, 1]) {
+        const z = side * (0.25 + 0.006);
+        const seg = (x0, y0, x1, y1, w = 0.009) => {
+          const len = Math.hypot(x1 - x0, y1 - y0);
+          const m = new THREE.Mesh(new THREE.PlaneGeometry(len, w), mat);
+          m.position.set((x0 + x1) / 2, (y0 + y1) / 2, z);
+          m.rotation.set(0, side < 0 ? Math.PI : 0, Math.atan2(y1 - y0, x1 - x0) * (side < 0 ? -1 : 1));
+          g.add(m);
+        };
+        for (const ex of [-hw, hw]) {
+          let y = 0.05;
+          while (y < H - 0.1) { const ny = Math.min(H, y + R2(0.2, 0.5)); if (Math.random() < 0.7) seg(ex, y, ex + R2(-0.006, 0.006), ny); y = ny + R2(0.05, 0.25); }
+        }
+        let x = -hw;
+        while (x < hw - 0.05) { const nx = Math.min(hw, x + R2(0.15, 0.35)); if (Math.random() < 0.7) seg(x, H, nx, H + R2(-0.006, 0.006)); x = nx + R2(0.05, 0.2); }
+      }
+      // dust drifting out on the draft
+      const n = 18, pos = new Float32Array(n * 3), seeds = [];
+      for (let k = 0; k < n; k++) seeds.push([R2(-hw, hw), R2(0.1, H), Math.random(), R2(0.06, 0.16), Math.random() < 0.5 ? -1 : 1]);
+      const dg = new THREE.BufferGeometry(); dg.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+      const dust = new THREE.Points(dg, new THREE.PointsMaterial({ map: this.T.dust, size: 0.025, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0, color: 0xc8d4e0 }));
+      g.add(dust);
+      this.group.add(g);
+      Object.assign(P, { hint: g, hintMat: mat, dust, seeds, alpha: 0, target: 0, openT: 0 });
+    }
+  }
+  setPassagesActive(ids) {
+    const set = new Set(ids);
+    for (const P of this.passages) P.active = set.has(P.id) || P.vault;
+  }
+  openPassage(id, angle) {
+    const P = this.passages.find((q) => q.id === id);
+    if (!P || P.open) return null;
+    P.open = true; P.target = angle; P.openT = 0;
+    return P;
+  }
+  closePassage(id) {
+    const P = this.passages.find((q) => q.id === id);
+    if (!P) return null;
+    P.open = false; P.target = 0;
+    return P;
   }
 
   takePart(i) { const p = this.parts[i]; if (!p || p.taken) return false; p.taken = true; p.holder.visible = false; return true; }
@@ -208,6 +263,23 @@ export class Items {
   }
 
   update(dt, t) {
+    for (const P of this.passages) {
+      P.openT += dt;
+      P.angle += (P.target - P.angle) * Math.min(1, dt * (P.target ? 5 : 4));
+      P.pivot.rotation.y = P.angle;
+      const want = P.active && !P.open && Math.abs(P.angle) < 0.05 ? 1 : 0;
+      P.alpha += (want - P.alpha) * Math.min(1, dt * 0.6);
+      if (P.alpha < 0.005 && !want) { P.hintMat.opacity = 0; P.dust.material.opacity = 0; continue; }
+      const flick = 0.7 + Math.sin(t * 5.3 + P.x) * 0.2 + Math.random() * 0.1;
+      P.hintMat.opacity = P.alpha * (P.vault ? 0.12 : 0.2) * flick;
+      P.dust.material.opacity = P.alpha * 0.35;
+      const pos = P.dust.geometry.attributes.position;
+      P.seeds.forEach((s, k) => {
+        s[2] = (s[2] + dt * s[3]) % 1;
+        pos.setXYZ(k, s[0] + Math.sin(t + k) * 0.04, s[1] - s[2] * 0.25, s[4] * (0.27 + s[2] * 1.1));
+      });
+      pos.needsUpdate = true;
+    }
     for (const p of this.parts) {
       if (p.taken) continue;
       p.mesh.rotation.y += dt * 0.5;
@@ -220,9 +292,9 @@ export class Items {
       const target = d.open ? 1 : Math.min(1, age / 4, Math.max(0, left / 4));
       d.alpha += (target - d.alpha) * Math.min(1, dt * 2);
       const flick = 0.75 + Math.sin(t * 7.3 + d.x) * 0.15 + Math.random() * 0.1;
-      d.mat.opacity = d.alpha * 0.55 * flick * (d.open ? 0 : 1);
-      d.leakMat.opacity = d.alpha * 0.1 * flick * (d.open ? 4 : 1);
-      d.dust.material.opacity = d.alpha * 0.5;
+      d.mat.opacity = d.alpha * 0.3 * flick * (d.open ? 0 : 1);
+      d.leakMat.opacity = d.alpha * (d.open ? 0.4 : 0.045) * flick;
+      d.dust.material.opacity = d.alpha * 0.3;
       const pos = d.dust.geometry.attributes.position;
       d.seeds.forEach((s, k) => {
         s[2] = (s[2] + dt * s[3]) % 1;
@@ -271,8 +343,12 @@ export class Items {
       for (const b of this.batteries) if (!b.taken) consider('battery', b.i, b.x, 0.05, b.z, 2.1, 0.75, 'Take the battery');
       for (const d of this.doors.values()) {
         const [fx, fz] = d.F.p(0, 0.3);
-        if (d.open) consider('door', d.id, fx, 1.2, fz, 2.8, 0.3, 'Escape through the passage');
-        else if (d.alpha > 0.3) consider('door', d.id, fx, 1.2, fz, 2.0, 0.55, 'Push the cracked stones');
+        if (d.open) consider('door', d.id, fx, 1.2, fz, 2.8, 0.3, 'Escape into the night');
+        else if (d.alpha > 0.3) consider('door', d.id, fx, 1.2, fz, 1.9, 0.6, 'Hold [E] to force the stones open (loud)', 6);
+      }
+      for (const P of this.passages) {
+        if (!P.active || P.open) continue;
+        consider('pass', P.id, P.x, 1.2, P.z, 2.0, 0.55, 'Push the loose stones');
       }
       for (const s of this.sacks.values()) consider('sack', s.pid, s.x, 1.8, s.z, 2.4, 0.4, `Hold [E] to cut ${opts.names?.[s.pid] || 'your friend'} down`, 2.2);
     }

@@ -38,7 +38,14 @@ export class AudioEngine {
     this.limiter.attack.value = 0.002; this.limiter.release.value = 0.2;
     this.limiter.connect(ctx.destination);
     this.master = ctx.createGain(); this.master.gain.value = this.volume; this.master.connect(this.limiter);
-    this.scareBus = ctx.createGain(); this.scareBus.gain.value = this.scareVolume; this.scareBus.connect(this.limiter);
+    // jumpscares skip the gentle limiter: driven into a bit-crusher and a hard clipper, pinned at full scale
+    this.scareBus = ctx.createGain(); this.scareBus.gain.value = this.scareVolume; this.scareBus.connect(ctx.destination);
+    this.scareIn = ctx.createGain(); this.scareIn.gain.value = 1;
+    const crush = ctx.createWaveShaper(); crush.curve = (() => { const n = 4096, c = new Float32Array(n); for (let i = 0; i < n; i++) { const x = (i * 2) / n - 1; c[i] = Math.round(x * 7) / 7; } return c; })();
+    const clip = ctx.createWaveShaper(); clip.curve = (() => { const n = 4096, c = new Float32Array(n); for (let i = 0; i < n; i++) { const x = (i * 2) / n - 1; c[i] = Math.max(-0.97, Math.min(0.97, Math.tanh(x * 9))); } return c; })();
+    clip.oversample = 'none';
+    const presence = this.filt('peaking', 2800, 0.8); presence.gain.value = 9;
+    this.scareIn.connect(crush); crush.connect(presence); presence.connect(clip); clip.connect(this.scareBus);
     this.music = ctx.createGain(); this.music.gain.value = 0.8; this.music.connect(this.master);
     this.sfx = ctx.createGain(); this.sfx.connect(this.master);
     this.amb = ctx.createGain(); this.amb.gain.value = 0.9; this.amb.connect(this.master);
@@ -558,8 +565,27 @@ export class AudioEngine {
   jumpscare() {
     if (!this.ready) return;
     const t = this.t;
-    const o = this.gain(2.2);
-    o.connect(this.scareBus);
+    const o = this.gain(2.6);
+    o.connect(this.scareIn);
+    // rasp: a 45Hz chopper on everything — the sound physically flutters
+    const chop = this.gain(0.55), lfo = this.osc('square', 45, t, 2), lg = this.gain(0.45);
+    lfo.connect(lg); lg.connect(chop.gain);
+    chop.connect(o);
+    // ear-piercing beating cluster in the 2-4kHz band
+    for (const [f, df] of [[2100, 37], [2900, 53], [3700, 29]]) {
+      for (const ff of [f, f + df]) {
+        const s = this.osc('sawtooth', ff, t, 1.9);
+        s.frequency.setValueAtTime(ff * 0.8, t); s.frequency.exponentialRampToValueAtTime(ff * 1.25, t + 1.6);
+        const g = this.gain(0); this.env(g, t, 0.01, 0.35, 0.3, 1.4); s.connect(g); g.connect(chop);
+      }
+    }
+    // second hit when He lunges again
+    const t2 = t + 1.08;
+    const n2 = this.noiseSrc(t2, 0.4), n2f = this.filt('lowpass', 4000), n2g = this.gain(0);
+    this.env(n2g, t2, 0.001, 1.8, 0.35); n2.connect(n2f); n2f.connect(n2g); n2g.connect(o);
+    const sub2 = this.osc('sine', 70, t2, 0.8); sub2.frequency.exponentialRampToValueAtTime(28, t2 + 0.6);
+    const s2g = this.gain(0); this.env(s2g, t2, 0.002, 1.6, 0.6); sub2.connect(s2g); s2g.connect(o);
+    this.scream(t2, chop, { base: 800, dur: 0.75, vol: 1.4, rise: 1.8, voices: 6 });
     const vs = this.gain(0.4); o.connect(vs); vs.connect(this.verbSend);
     // impact
     const n = this.noiseSrc(t, 0.6), nf = this.filt('lowpass', 5000), ng = this.gain(0);
@@ -567,8 +593,8 @@ export class AudioEngine {
     const sub = this.osc('sine', 90, t, 1.8); sub.frequency.exponentialRampToValueAtTime(30, t + 1.4);
     const sg = this.gain(0); this.env(sg, t, 0.003, 1.6, 1.5); sub.connect(sg); sg.connect(o);
     // the scream
-    this.scream(t, o, { base: 520, dur: 1.65, vol: 1.6, rise: 1.5, voices: 7 });
-    this.scream(t + 0.03, o, { base: 210, dur: 1.5, vol: 1.0, rise: 1.2, voices: 4 });
+    this.scream(t, chop, { base: 520, dur: 1.75, vol: 1.8, rise: 1.5, voices: 8 });
+    this.scream(t + 0.03, chop, { base: 210, dur: 1.6, vol: 1.2, rise: 1.2, voices: 5 });
     // orchestral cluster
     for (const m of [36, 37, 42, 48, 49, 55, 61]) {
       const os = this.osc('sawtooth', midi(m), t, 1.8), f = this.filt('lowpass', 2200), g = this.gain(0);
@@ -579,8 +605,8 @@ export class AudioEngine {
   grabScare() {
     if (!this.ready) return;
     const t = this.t;
-    const o = this.gain(1.8);
-    o.connect(this.scareBus);
+    const o = this.gain(1.2);
+    o.connect(this.scareIn);
     const n = this.noiseSrc(t, 0.4), nf = this.filt('lowpass', 6000), ng = this.gain(0);
     this.env(ng, t, 0.001, 1.4, 0.35); n.connect(nf); nf.connect(ng); ng.connect(o);
     const sub = this.osc('sine', 110, t, 0.9); sub.frequency.exponentialRampToValueAtTime(40, t + 0.8);

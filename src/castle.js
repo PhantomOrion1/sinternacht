@@ -229,8 +229,42 @@ export class Castle {
   }
 
   // ---------- cells ----------
+  // the vault: a sealed room on the edge of the castle. The only way in is a hidden passage;
+  // the only way out of the castle is the old door inside it.
+  chooseVault() {
+    const N = this.N, rng = this.rng;
+    const inHall = (x, y) => this.halls.some((h) => x >= h.bx && x <= h.bx + 1 && y >= h.by && y <= h.by + 1);
+    const inside = (x, y) => x >= 0 && y >= 0 && x < N && y < N;
+    const degree = (x, y) => [0, 1, 2, 3].filter((d) => this.passable(x, y, d)).length;
+    const cands = [];
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+      const outer = x === 0 || y === 0 || x === N - 1 || y === N - 1;
+      const corner = (x === 0 || x === N - 1) && (y === 0 || y === N - 1);
+      if (outer && !corner && !inHall(x, y)) cands.push([x, y]);
+    }
+    rng.shuffle(cands);
+    cands.sort((a, b) => degree(...a) - degree(...b));
+    for (const [x, y] of cands) {
+      const saved = [0, 1, 2, 3].map((d) => this.edge(x, y, d));
+      for (let d = 0; d < 4; d++) if (inside(x + DIRS[d][0], y + DIRS[d][1])) this.setEdge(x, y, d, 0);
+      const dist = this.bfs(0, 0);
+      let ok = true;
+      for (let i = 0; i < N * N; i++) if (i !== y * N + x && dist[i] < 0) { ok = false; break; }
+      if (ok) {
+        const inner = [0, 1, 2, 3].filter((d) => inside(x + DIRS[d][0], y + DIRS[d][1]));
+        const ent = inner.find((d) => saved[d] !== 0) ?? rng.pick(inner);
+        const exitSide = [0, 1, 2, 3].find((d) => !inside(x + DIRS[d][0], y + DIRS[d][1]));
+        this.vault = { x, y, entrance: ent, exitSide, nx: x + DIRS[ent][0], ny: y + DIRS[ent][1] };
+        return;
+      }
+      for (let d = 0; d < 4; d++) this.setEdge(x, y, d, saved[d]);
+    }
+  }
+  inVault(px, pz) { const [cx, cy] = this.cellAt(px, pz); return !!this.vault && cx === this.vault.x && cy === this.vault.y; }
+
   makeCells() {
     const N = this.N;
+    this.chooseVault();
     this.cells = [];
     for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
       const faces = [];
@@ -239,6 +273,36 @@ export class Castle {
     }
     this.halls.forEach((h, i) => {
       for (let yy = h.by; yy <= h.by + 1; yy++) for (let xx = h.bx; xx <= h.bx + 1; xx++) this.cells[yy * N + xx].hall = i;
+    });
+    // hidden passages: interior walls with a stone panel that can pivot open
+    const cand = [];
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+      if (x < N - 1 && this.edge(x, y, 1) === 0) cand.push({ x, y, d: 1 });
+      if (y < N - 1 && this.edge(x, y, 2) === 0) cand.push({ x, y, d: 2 });
+    }
+    this.rng.shuffle(cand);
+    const chosen = [];
+    const V = this.vault;
+    const touchesVault = (c) => (c.x === V.x && c.y === V.y) || (c.x + (c.d === 1 ? 1 : 0) === V.x && c.y + (c.d === 2 ? 1 : 0) === V.y);
+    {
+      // the one way into the vault
+      const lo = V.entrance === 1 || V.entrance === 2 ? { x: V.x, y: V.y, d: V.entrance } : { x: V.nx, y: V.ny, d: V.entrance === 3 ? 1 : 2 };
+      chosen.push({ ...lo, mx: lo.x + (lo.d === 1 ? 1 : 0.5), my: lo.y + (lo.d === 2 ? 1 : 0.5), vault: true });
+    }
+    for (const c of cand) {
+      if (chosen.length >= 18) break;
+      if (touchesVault(c)) continue;
+      const mx = c.x + (c.d === 1 ? 1 : 0.5), my = c.y + (c.d === 2 ? 1 : 0.5);
+      if (chosen.some((o) => Math.abs(o.mx - mx) + Math.abs(o.my - my) < 2.2)) continue;
+      chosen.push({ ...c, mx, my });
+    }
+    { const f = this.cell(V.x, V.y).faces[V.exitSide]; f.used = true; f.deco = 'exit'; }
+    this.passEdges = new Map();
+    chosen.forEach((c, id) => {
+      const nx = c.x + (c.d === 1 ? 1 : 0), ny = c.y + (c.d === 2 ? 1 : 0);
+      for (const [cx, cy, side] of [[c.x, c.y, c.d], [nx, ny, (c.d + 2) % 4]]) { const f = this.cell(cx, cy).faces[side]; f.used = true; f.deco = 'passage'; }
+      const key = c.d === 1 ? `v:${c.y}:${c.x + 1}` : `h:${c.y + 1}:${c.x}`;
+      this.passEdges.set(key, { id, cellA: [c.x, c.y], cellB: [nx, ny], vault: !!c.vault });
     });
   }
   cell(x, y) { return this.cells[y * this.N + x]; }
@@ -269,14 +333,17 @@ export class Castle {
     const cx0 = Math.max(0, Math.floor((c.x0 - m) / CELL)), cx1 = Math.min(N - 1, Math.floor((c.x1 + m) / CELL));
     const cz0 = Math.max(0, Math.floor((c.z0 - m) / CELL)), cz1 = Math.min(N - 1, Math.floor((c.z1 + m) / CELL));
     for (let yy = cz0; yy <= cz1; yy++) for (let xx = cx0; xx <= cx1; xx++) this.cellCol[yy * N + xx].push(c);
+    return c;
   }
   // push a circle out of everything; returns true if it hit something
-  collide(p, r) {
+  // monsters can never use the hidden passages
+  collide(p, r, monster = false) {
     const [cx, cy] = this.cellAt(p.x, p.z);
     const list = this.cellCol[cy * this.N + cx];
     let hit = false;
     for (let iter = 0; iter < 2; iter++) {
       for (const c of list) {
+        if (c.passage && c.passage.open && !monster) continue;
         const nx = Math.max(c.x0, Math.min(p.x, c.x1));
         const nz = Math.max(c.z0, Math.min(p.z, c.z1));
         const dx = p.x - nx, dz = p.z - nz;
@@ -361,7 +428,7 @@ export class Castle {
       this.addCollider(px - hp, pz - hp, px + hp, pz + hp, true);
     }
     // wall segments
-    const seg = (alongX, fixed, a0, a1, val) => {
+    const seg = (alongX, fixed, a0, a1, val, key) => {
       if (val === 2) return;
       const t = WALL_T / 2;
       const s0 = a0 + hp, s1 = a1 - hp;
@@ -378,6 +445,32 @@ export class Castle {
         if (alongX) B.stoneDark.box(b0, 0, fixed - t - 0.05, b1, 0.22, fixed + t + 0.05);
         else B.stoneDark.box(fixed - t - 0.05, 0, b0, fixed + t + 0.05, 0.22, b1);
       };
+      const P = val === 0 && this.passEdges.get(key);
+      if (P) {
+        // a wall with a hidden pivoting panel in it — seamless until it opens
+        const mid = (a0 + a1) / 2, PW = 1.15, PH = 2.35, g0 = mid - PW / 2, g1 = mid + PW / 2;
+        add(s0, g0, 0, H, true); add(g1, s1, 0, H, true); add(g0, g1, PH, H, false);
+        trim(s0, g0); trim(g1, s1);
+        const pb = new Bucket(3.0), pt = new Bucket(1.2);
+        let col;
+        if (alongX) {
+          pb.box(g0, 0, fixed - t, g1, PH, fixed + t, { bottom: true });
+          pt.box(g0, 0, fixed - t - 0.05, g1, 0.22, fixed + t + 0.05);
+          col = this.addCollider(g0, fixed - t, g1, fixed + t, true);
+        } else {
+          pb.box(fixed - t, 0, g0, fixed + t, PH, g1, { bottom: true });
+          pt.box(fixed - t - 0.05, 0, g0, fixed + t + 0.05, 0.22, g1);
+          col = this.addCollider(fixed - t, g0, fixed + t, g1, true);
+        }
+        col.passage = P;
+        Object.assign(P, {
+          alongX, PW, PH, pb, pt, collider: col, open: false, active: false, angle: 0,
+          hinge: alongX ? [g0, fixed] : [fixed, g0],
+          x: alongX ? mid : fixed, z: alongX ? fixed : mid,
+          nx: alongX ? 0 : 1, nz: alongX ? 1 : 0,
+        });
+        return;
+      }
       if (val === 0) { add(s0, s1, 0, H, true); trim(s0, s1); return; }
       const mid = (a0 + a1) / 2, g0 = mid - DOOR_W / 2, g1 = mid + DOOR_W / 2;
       add(s0, g0, 0, H, true); add(g1, s1, 0, H, true); add(g0, g1, DOOR_H, H, false);
@@ -398,8 +491,8 @@ export class Castle {
         this.addCollider(fixed - ft, g1 - pw, fixed + ft, g1, true);
       }
     };
-    for (let j = 0; j <= N; j++) for (let i = 0; i < N; i++) seg(true, j * CELL, i * CELL, (i + 1) * CELL, this.h[j][i]);
-    for (let j = 0; j < N; j++) for (let i = 0; i <= N; i++) seg(false, i * CELL, j * CELL, (j + 1) * CELL, this.v[j][i]);
+    for (let j = 0; j <= N; j++) for (let i = 0; i < N; i++) seg(true, j * CELL, i * CELL, (i + 1) * CELL, this.h[j][i], `h:${j}:${i}`);
+    for (let j = 0; j < N; j++) for (let i = 0; i <= N; i++) seg(false, i * CELL, j * CELL, (j + 1) * CELL, this.v[j][i], `v:${j}:${i}`);
   }
 
   // ---------- decoration ----------
@@ -416,10 +509,18 @@ export class Castle {
     // keep about a third of the bare walls free: secret doors can open there later
     for (const c of this.cells) for (const f of c.faces) if (f.solid && rng.chance(0.34)) { f.reserved = true; f.used = true; }
     for (const c of this.cells) {
-      c.theme = c.hall >= 0 ? 'hall' : pickTheme();
+      const isVault = c.x === this.vault.x && c.y === this.vault.y;
+      c.theme = isVault ? 'vault' : c.hall >= 0 ? 'hall' : pickTheme();
       const free = () => rng.shuffle([0, 1, 2, 3].filter((s) => c.faces[s].solid && !c.faces[s].used));
       const use = (s, top) => { c.faces[s].used = true; c.faces[s].top = top; };
       const F = (s) => this.faceFrame(c.x, c.y, s);
+      if (isVault) {
+        // empty sacks and little shoes, piled in the dark
+        const f = free();
+        if (f[0] !== undefined) { this.crates(F(f[0])); use(f[0], 1.6); }
+        this.cobweb(c, 0); this.cobweb(c, 1); this.cobweb(c, 2); this.cobweb(c, 3);
+        continue;
+      }
       switch (c.theme) {
         case 'library': for (const s of free().slice(0, 3)) { this.bookshelf(F(s)); use(s, 2.7); } break;
         case 'dining': { const f = free(); if (f[0] !== undefined) { this.table(F(f[0]), true); use(f[0], 1.0); } if (f[1] !== undefined) { this.cabinet(F(f[1])); use(f[1], 1.9); } break; }
@@ -717,8 +818,10 @@ export class Castle {
   planSpawns() {
     const rng = this.rng, N = this.N;
     const corners = [[0, 0], [N - 1, 0], [0, N - 1], [N - 1, N - 1]];
-    const sp = rng.pick(corners);
+    const vd = this.bfs(this.vault.nx, this.vault.ny);
+    const sp = corners.reduce((a, b) => (vd[b[1] * N + b[0]] > vd[a[1] * N + a[0]] ? b : a));
     this.spawnCell = sp;
+    this.exitFace = { x: this.vault.x, y: this.vault.y, side: this.vault.exitSide };
     this.spawnDist = this.bfs(sp[0], sp[1]);
     const [sx, sz] = this.center(sp[0], sp[1]);
     this.spawnPos = [sx, sz];
@@ -765,7 +868,7 @@ export class Castle {
     // soot helpers
     this.elfSpots = [];
     const ec = rng.shuffle(this.cells.filter((c) => this.spawnDist[c.y * N + c.x] >= 3));
-    for (const c of ec.slice(0, 10)) {
+    for (const c of ec.slice(0, 12)) {
       const p = rng.chance(0.5) ? takeCorner(c) : null;
       const [cx, cz] = this.center(c.x, c.y);
       this.elfSpots.push(p ? { x: p[0], z: p[1] } : { x: cx + rng.range(-1, 1), z: cz + rng.range(-1, 1) });
@@ -774,7 +877,7 @@ export class Castle {
     this.doorFaces = [];
     for (const c of this.cells) for (let s = 0; s < 4; s++) {
       const f = c.faces[s];
-      if (f.solid && (f.reserved || (!f.used && !f.deco))) this.doorFaces.push({ x: c.x, y: c.y, side: s });
+      if (f.solid && f.deco !== 'passage' && (f.reserved || (!f.used && !f.deco))) this.doorFaces.push({ x: c.x, y: c.y, side: s, outer: f.outer });
     }
   }
   pedestal(x, z) {
@@ -820,6 +923,19 @@ export class Castle {
       mesh.castShadow = !['wall', 'floor', 'ceil', 'beam', 'web', 'carpet'].includes(k);
       mesh.matrixAutoUpdate = false;
       this.group.add(mesh);
+    }
+    // hidden passage panels, each on its own hinge
+    this.passages = [...this.passEdges.values()].filter((P) => P.pb).sort((a, b) => a.id - b.id);
+    for (const P of this.passages) {
+      const pivot = new THREE.Group();
+      pivot.position.set(P.hinge[0], 0, P.hinge[1]);
+      const gm = P.pb.build(); gm.translate(-P.hinge[0], 0, -P.hinge[1]);
+      const m = new THREE.Mesh(gm, mats.wall); m.castShadow = true; m.receiveShadow = true; pivot.add(m);
+      const tg = P.pt.build(); tg.translate(-P.hinge[0], 0, -P.hinge[1]);
+      pivot.add(new THREE.Mesh(tg, mats.stoneDark));
+      this.group.add(pivot);
+      P.pivot = pivot;
+      delete P.pb; delete P.pt;
     }
     // night windows
     if (this.windows.length) {

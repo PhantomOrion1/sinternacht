@@ -31,7 +31,7 @@ function buildElf(M, glowMat, rng) {
   const root = new THREE.Group();
   const body = new THREE.Group(); root.add(body);
   const pelvis = new THREE.Group(); pelvis.position.y = 0.9; body.add(pelvis);
-  const coat = rng.pick([M.maroon, M.teal, M.ochre]);
+  const coat = M.velvet;
   const breeches = ball(0.17, coat, 1.15, 0.85, 0.95); breeches.position.y = -0.06; pelvis.add(breeches);
   const legs = [-1, 1].map((s) => {
     const hip = new THREE.Group(); hip.position.set(s * 0.09, -0.08, 0); pelvis.add(hip);
@@ -42,19 +42,42 @@ function buildElf(M, glowMat, rng) {
     const calf = ball(0.042, M.tights, 1, 2.2, 1); calf.position.set(0, -0.14, -0.012); knee.add(calf);
     const ankle = new THREE.Group(); ankle.position.y = -EL2; knee.add(ankle);
     const shoe = new THREE.Mesh(new THREE.BoxGeometry(0.085, 0.06, 0.24), M.shoe); shoe.position.set(0, -0.025, 0.06); shoe.castShadow = true; ankle.add(shoe);
+    const buckle = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.03, 0.01), M.gold); buckle.position.set(0, -0.005, 0.15); ankle.add(buckle);
     return { hip, knee, ankle };
   });
   const torso = new THREE.Group(); pelvis.add(torso);
   const doublet = new THREE.Mesh(new THREE.CylinderGeometry(0.155, 0.135, 0.46, 12), coat); doublet.scale.z = 0.8; doublet.position.y = 0.23; doublet.castShadow = true; torso.add(doublet);
   const belt = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 0.04, 12), M.shoe); belt.scale.z = 0.8; belt.position.y = 0.03; torso.add(belt);
-  // pleated ruff collar, grey with soot
-  const ruff = new THREE.Mesh(new THREE.TorusGeometry(0.105, 0.05, 8, 22), M.ruff); ruff.rotation.x = Math.PI / 2; ruff.scale.set(1, 1, 0.65); ruff.position.y = 0.47; torso.add(ruff);
+  for (const by of [0.13, 0.25, 0.37]) { const b = ball(0.016, M.gold); b.position.set(0, by, 0.125); torso.add(b); }
+  // gold brocade shoulder cape
+  const cg = new THREE.CylinderGeometry(0.155, 0.235, 0.2, 28, 2, true);
+  const cp = cg.attributes.position;
+  for (let i = 0; i < cp.count; i++) if (cp.getY(i) < 0) { const a = Math.atan2(cp.getZ(i), cp.getX(i)); cp.setY(i, cp.getY(i) - Math.abs(Math.sin(a * 6)) * 0.03); }
+  cg.computeVertexNormals();
+  const cape = new THREE.Mesh(cg, M.brocade);
+  cape.scale.z = 0.85; cape.position.y = 0.39; cape.castShadow = true; torso.add(cape);
+  const capeTrim = new THREE.Mesh(new THREE.TorusGeometry(0.235, 0.01, 5, 28), M.gold); capeTrim.rotation.x = Math.PI / 2; capeTrim.scale.set(1, 0.85, 1); capeTrim.position.y = 0.29; torso.add(capeTrim);
+  // big pleated white ruff
+  torso.add((() => {
+    const R0 = 0.11, g = new THREE.TorusGeometry(R0, 0.055, 10, 64);
+    const p = g.attributes.position;
+    for (let i = 0; i < p.count; i++) {
+      const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+      const a = Math.atan2(y, x), cx = Math.cos(a) * R0, cy = Math.sin(a) * R0;
+      const k = 1 + 0.28 * Math.abs(Math.sin(a * 15));
+      p.setXYZ(i, cx + (x - cx) * k, cy + (y - cy) * k, z * k);
+    }
+    g.computeVertexNormals();
+    const m = new THREE.Mesh(g, M.ruff); m.rotation.x = Math.PI / 2; m.scale.set(1, 0.9, 0.75); m.position.y = 0.5; m.castShadow = true;
+    return m;
+  })());
   const arms = [-1, 1].map((s) => {
     const sh = new THREE.Group(); sh.position.set(s * 0.2, 0.41, 0); torso.add(sh);
     const puff = ball(0.085, coat, 1, 1.25, 1); puff.position.y = -0.05; sh.add(puff);
-    sh.add(limb(0.3, 0.042, 0.036, coat));
+    sh.add(limb(0.3, 0.046, 0.04, coat));
     const el = new THREE.Group(); el.position.y = -0.3; sh.add(el);
-    el.add(limb(0.28, 0.032, 0.026, M.soot));
+    el.add(limb(0.27, 0.04, 0.034, coat));
+    const cuff = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.03, 12), M.gold); cuff.position.y = -0.255; el.add(cuff);
     const hand = new THREE.Group(); hand.position.y = -0.28; el.add(hand);
     const palm = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.09, 0.028), M.soot); palm.position.y = -0.045; palm.castShadow = true; hand.add(palm);
     for (let f = 0; f < 4; f++) {
@@ -74,12 +97,24 @@ function buildElf(M, glowMat, rng) {
   face.group.scale.setScalar(HEAD_R);
   face.group.position.set(0, HEAD_R * 1.02, 0.01);
   head.add(face.group);
-  // beret with a long, broken feather
-  const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.118, 0.045, 16), M.cap); cap.position.set(0.015, HEAD_R * 2.0, -0.01); cap.rotation.set(-0.18, 0, 0.2); cap.castShadow = true; head.add(cap);
-  const fg = new THREE.PlaneGeometry(0.05, 0.34, 1, 5);
-  const fp = fg.attributes.position;
-  for (let i = 0; i < fp.count; i++) fp.setZ(i, -Math.pow(fp.getY(i) + 0.17, 2) * 1.2);
-  const feather = new THREE.Mesh(fg, M.feather); feather.position.set(0.1, HEAD_R * 2.0 + 0.12, -0.07); feather.rotation.set(-0.9, 0.3, -0.5); head.add(feather);
+  // big puffy velvet beret with a gold band and a green plume
+  const beret = new THREE.Group(); beret.position.set(0.01, HEAD_R * 1.95, -0.02); beret.rotation.set(-0.22, 0, 0.18); head.add(beret);
+  const bg = new THREE.SphereGeometry(0.17, 20, 12);
+  const bp = bg.attributes.position;
+  for (let i = 0; i < bp.count; i++) { const x = bp.getX(i), y = bp.getY(i), z = bp.getZ(i); const k = 1 + Math.sin(Math.atan2(z, x) * 7) * 0.07; bp.setXYZ(i, x * 1.22 * k, y * 0.48 + 0.03, z * 1.15 * k); }
+  bg.computeVertexNormals();
+  const crown = new THREE.Mesh(bg, M.beret); crown.castShadow = true; beret.add(crown);
+  const band = new THREE.Mesh(new THREE.TorusGeometry(0.128, 0.022, 6, 26), M.gold); band.rotation.x = Math.PI / 2; band.scale.set(1.05, 1, 1); band.position.y = -0.02; beret.add(band);
+  for (let k = 0; k < 5; k++) {
+    const fg = new THREE.PlaneGeometry(0.075 - k * 0.006, 0.5 - k * 0.04, 1, 8);
+    const fp = fg.attributes.position;
+    for (let i = 0; i < fp.count; i++) { const yy = fp.getY(i) + 0.25; fp.setZ(i, -yy * yy * 1.1); fp.setX(i, fp.getX(i) * (1 - yy * 0.6)); }
+    fg.translate(0, 0.25, 0);
+    const plume = new THREE.Mesh(fg, M.feather);
+    plume.position.set(0.1 + k * 0.012, 0.03, -0.02 - k * 0.02);
+    plume.rotation.set(-1.05 - k * 0.12, 0.45 + k * 0.15, -0.6 - k * 0.1);
+    beret.add(plume);
+  }
   const glows = face.eyes.map((e) => {
     const g = new THREE.Sprite(glowMat);
     g.position.copy(e.holder.position).add(new THREE.Vector3(0, 0, face.o.eyeR * 0.9));
@@ -97,17 +132,17 @@ export class Elves {
     const rng = makeRng(seed ^ 0x5eed);
     const M = this.M = {
       soot: new THREE.MeshStandardMaterial({ color: 0x2c2826, roughness: 0.9 }),
-      tights: new THREE.MeshStandardMaterial({ color: 0x141214, roughness: 0.8 }),
-      shoe: new THREE.MeshStandardMaterial({ color: 0x0c0a08, roughness: 0.5 }),
-      maroon: new THREE.MeshStandardMaterial({ color: 0x3a0e14, roughness: 0.9 }),
-      teal: new THREE.MeshStandardMaterial({ color: 0x0e2628, roughness: 0.9 }),
-      ochre: new THREE.MeshStandardMaterial({ color: 0x3a2a0e, roughness: 0.9 }),
-      ruff: new THREE.MeshStandardMaterial({ color: 0x6a665e, roughness: 1 }),
-      cap: new THREE.MeshStandardMaterial({ color: 0x1a0c12, roughness: 0.7 }),
-      feather: new THREE.MeshStandardMaterial({ color: 0x8a857a, roughness: 1, side: THREE.DoubleSide }),
+      tights: new THREE.MeshStandardMaterial({ color: 0x2a1440, roughness: 0.75 }),
+      shoe: new THREE.MeshStandardMaterial({ color: 0x0c0a08, roughness: 0.4 }),
+      velvet: new THREE.MeshStandardMaterial({ map: T.piet.map, normalMap: T.piet.normal, roughness: 0.85 }),
+      brocade: new THREE.MeshStandardMaterial({ map: T.brocade.map, normalMap: T.brocade.normal, roughness: 0.5, metalness: 0.35, side: THREE.DoubleSide }),
+      beret: new THREE.MeshStandardMaterial({ map: T.beret.map, normalMap: T.beret.normal, roughness: 0.9 }),
+      gold: new THREE.MeshStandardMaterial({ color: 0xc8a050, roughness: 0.35, metalness: 0.85 }),
+      ruff: new THREE.MeshStandardMaterial({ color: 0xd8d4ca, roughness: 0.95 }),
+      feather: new THREE.MeshStandardMaterial({ color: 0x3aaa6a, roughness: 0.85, emissive: 0x06140c, side: THREE.DoubleSide }),
     };
     this.glowMat = new THREE.SpriteMaterial({ map: T.glow, color: 0xe8eeff, blending: THREE.AdditiveBlending, depthWrite: false, fog: false, opacity: 0.45 });
-    const types = rng.shuffle(['crawler', 'crawler', 'crawler', 'stander', 'stander', 'stander', 'stander', 'runner', 'runner', 'runner']);
+    const types = rng.shuffle(['crawler', 'crawler', 'crawler', 'crawler', 'crawler', 'stander', 'stander', 'stander', 'stander', 'runner', 'runner', 'runner']);
     this.list = castle.elfSpots.map((sp, i) => {
       const type = types[i % types.length];
       const model = buildElf(M, this.glowMat, rng);
@@ -149,7 +184,7 @@ export class Elves {
     if (d < 0.02) return d;
     const st = Math.min(d, speed * dt);
     const p = { x: s.x + (dx / d) * st, z: s.z + (dz / d) * st };
-    this.castle.collide(p, 0.28);
+    this.castle.collide(p, 0.28, true);
     s.x = p.x; s.z = p.z;
     s.yaw = dampAngle(s.yaw, Math.atan2(dx, dz), 12, dt);
     return d;
@@ -210,15 +245,27 @@ export class Elves {
         continue;
       }
       if (e.type === 'crawler') {
-        if (s.mode === 'idle') { if (p && d < 13 && los) { s.mode = 'crawl'; ai.t = 0; } }
+        // they sense you from rooms away and come for you, through the doorways
+        ai.scanT = (ai.scanT ?? R(0, 1)) - dt;
+        if (ai.scanT <= 0) {
+          ai.scanT = 1.2;
+          const [cx, cy] = C.cellAt(s.x, s.z);
+          const dist = C.bfs(cx, cy);
+          let best = null, bd = 99;
+          for (const q of alive) { const [qx, qy] = C.cellAt(q.x, q.z); const dd = dist[qy * C.N + qx]; if (dd >= 0 && dd < bd) { bd = dd; best = q; } }
+          ai.prey = best && bd <= 7 ? best.id : null;
+        }
+        const prey = alive.find((q) => q.id === ai.prey);
+        if (s.mode === 'idle') { if (prey) { s.mode = 'crawl'; ai.t = 0; } }
         else if (s.mode === 'crawl') {
-          if (!p || d > 20) { s.mode = 'idle'; continue; }
+          if (!prey) { s.mode = 'idle'; continue; }
+          const dp = Math.hypot(prey.x - s.x, prey.z - s.z);
+          const plos = prey === p && los;
           ai.burstCd -= dt;
           if (ai.burst > 0) ai.burst -= dt;
-          else if (ai.burstCd <= 0) { ai.burst = R(0.4, 0.8); ai.burstCd = R(1.5, 3.2); }
-          const sp = ai.burst > 0 ? 3.1 : ai.burstCd > 1.2 ? 0 : 0.85;
-          if (sp > 0) this.chase(e, p, sp, dt, los);
-          else if (p) s.yaw = dampAngle(s.yaw, Math.atan2(p.x - s.x, p.z - s.z), 4, dt);
+          else if (ai.burstCd <= 0) { ai.burst = R(0.4, 0.8); ai.burstCd = R(1.6, 3.4); }
+          const sp = ai.burst > 0 ? 3.0 : plos && dp < 10 ? 1.5 : 1.1;
+          this.chase(e, prey, sp, dt, plos);
         }
       } else if (e.type === 'stander') {
         if (p) s.yaw = dampAngle(s.yaw, Math.atan2(p.x - s.x, p.z - s.z), 0.6, dt);
@@ -277,7 +324,7 @@ export class Elves {
       v.sndT -= dt;
       if (v.sndT <= 0) {
         v.sndT = R(0.7, 1.4);
-        if (mode === 'crawl' && dCam < 16 && v.spd > 0.2) hear?.('scratch', v.x, v.z);
+        if (mode === 'crawl' && dCam < 26 && v.spd > 0.2) hear?.('scratch', v.x, v.z);
         else if (mode === 'stand' && dCam < 7 && Math.random() < 0.25) { hear?.('whisper', v.x, v.z); v.sndT = R(6, 12); }
         else if (mode === 'idle' && e.type === 'runner' && dCam < 9 && Math.random() < 0.2) { hear?.('giggle', v.x, v.z); v.sndT = R(5, 10); }
       }

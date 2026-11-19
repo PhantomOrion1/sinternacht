@@ -8,8 +8,9 @@ A first-person co-op horror game that runs in the browser. It's the night of 5 D
 
 ## The goal
 
-- Find the **four parts of the Silver Crossbow** on candlelit pedestals. Once it's whole, shoot Him three times.
-- **Or** find a **hidden way out**. Secret doors open and close all over the castle. Look for thin cracks of light in the walls and listen for wind and whispers.
+- Find the **four parts of the Silver Crossbow** on candlelit pedestals. Once it's whole, one silver bolt kills Him (you get three).
+- **Hidden passages**: some walls are pivoting stone panels. A few work at any moment and which ones keeps changing. Look for hairline cracks and dust on a cold draft. He and his helpers can't follow you through.
+- **Or escape**: one old door, in a sealed room deep in the castle, reachable only through a hidden passage. Forcing it open takes 6 loud seconds, and He will come for you.
 - **His helpers** are covered in soot and harmless, until you touch one. Some crawl toward you, some just stand there staring, and some charge at you and veer off at the last second.
 - **He** sees your flashlight from far away, and He can feel it when you shine it on Him. Turn the light off and crouch to hide. He hears you running.
 - In co-op, if He catches your friend they end up in His sack, hanging somewhere in the castle. Follow the muffled screams and hold **E** to cut them down.

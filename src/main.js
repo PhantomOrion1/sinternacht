@@ -280,7 +280,7 @@ function startGame({ seed, mode, localId, names }) {
     remote: null,
     parts: 0, crossbow: false, bolts: 0, reloadT: 0, recoil: 0,
     time: 0, ended: false, paused: false,
-    doorId: 0, doorT: R(80, 100), lightT: R(35, 60), fakeT: R(30, 45), bellT: 150,
+    doorId: 0, doorT: R(210, 270), passT: 0, lightT: R(35, 60), fakeT: R(30, 45), bellT: 150, holdKey: '', grindT: 0,
     noises: [], timers: [], grabUntil: {}, safeUntil: {},
     scare: null, escaping: null, spectate: false, holdT: 0, focus: null,
     sendT: 0, losT: 0, santaLos: false, sackCryT: 5,
@@ -298,7 +298,7 @@ function startGame({ seed, mode, localId, names }) {
   world.elves.isHost = mode !== 'guest';
   // HUD
   $('parts').innerHTML = PART_NAMES.map((n, i) => `<div class="part" data-i="${i}"><span class="pip"></span>${n}</div>`).join('');
-  $('objAlt').textContent = '…or find a hidden way out.';
+  $('objAlt').textContent = '…or find the old way out, sealed deep inside, behind a wall.';
   $('ammo').hidden = true;
   $('partner').hidden = mode === 'solo';
   // crossbow view model
@@ -316,6 +316,8 @@ function startGame({ seed, mode, localId, names }) {
   camera.fov = 72; camera.updateProjectionMatrix();
   // phantom for fake scares
   G.phantom = world.elves.makePhantom();
+  world.items.addDoor({ id: 1, fx: C.exitFace.x, fy: C.exitFace.y, side: C.exitFace.side, life: 1e9, born: Date.now() - 10000, permanent: true });
+  G.vaultAlarm = 0; G.vaultIdle = 0;
   try { renderer.compile(scene, camera); } catch (e) { /* ignore */ }
   U.blackout.value = 1; U.white.value = 0; U.red.value = 0; U.scare.value = 0;
   audio.stopAll();
@@ -328,7 +330,7 @@ function startGame({ seed, mode, localId, names }) {
 function intro() {
   const box = $('intro');
   box.hidden = false;
-  const lines = ['5 December. Pakjesavond.', 'Your name is in His book.', 'Find the four parts of the Silver Crossbow…', '…or a hidden way out.'];
+  const lines = ['5 December. Pakjesavond.', 'Your name is in His book.', 'Find the four parts of the Silver Crossbow…', 'Some walls are not walls. He cannot follow you through them.', 'Somewhere deep inside, behind a wall, is the old way out.'];
   box.innerHTML = '<p></p>';
   const p = box.firstChild;
   let i = 0;
@@ -363,7 +365,7 @@ function showEnd(ev) {
   const friend = G.remote ? G.names[G.remote.id] : null;
   const fstat = G.remote ? (ev.status || G.status)[G.remote.id] : null;
   let title = 'Meegenomen', text = "He stuffed you in His sack. You're going to Spain.", win = false;
-  if (ev.result === 'kill') { title = 'De Sint is dood'; text = 'Three silver bolts. He folded up like a broken umbrella and crumbled into soot. The castle is quiet. For now.'; win = true; }
+  if (ev.result === 'kill') { title = 'De Sint is dood'; text = 'One silver bolt. He folded up like a broken umbrella and crumbled into soot. The castle is quiet. For now.'; win = true; }
   else if (ev.result === 'escape') {
     if (me === 'escaped') {
       win = true; title = 'Ontsnapt';
@@ -409,10 +411,10 @@ function applyEvent(ev) {
       break;
     }
     case 'assembled': {
-      G.crossbow = true; G.bolts = 6; G.reloadT = 0;
+      G.crossbow = true; G.bolts = 3; G.reloadT = 0;
       audio.sting();
       setTimeout(() => showMsg('The Silver Crossbow is whole. Hunt Him. (Left click)', 5), 1800);
-      $('objAlt').textContent = 'Three bolts will put Him down.';
+      $('objAlt').textContent = 'One silver bolt will put Him down. You have three.';
       break;
     }
     case 'battery': {
@@ -524,6 +526,16 @@ function applyEvent(ev) {
       audio.thunder(R(0.6, 2));
       break;
     }
+    case 'passActive': W.items.setPassagesActive(ev.ids); break;
+    case 'vaultIn': {
+      const S2 = W.santa;
+      audio.doorSlam({ x: S2.s.x, y: 1.5, z: S2.s.z }, 0);
+      audio.sting();
+      if (W.castle.inVault(camera.position.x, camera.position.z)) showMsg('Something came through the wall.', 2.5);
+      break;
+    }
+    case 'passOpen': { const P = W.items.openPassage(ev.id, ev.a); if (P) audio.stoneGrind({ x: P.x, y: 1.2, z: P.z }, 0.7); break; }
+    case 'passClose': { const P = W.items.closePassage(ev.id); if (P) audio.stoneGrind({ x: P.x, y: 1.2, z: P.z }, 0.6); break; }
     case 'end': showEnd(ev); break;
   }
 }
@@ -602,6 +614,19 @@ function handleRequest(from, req) {
     case 'shot': {
       net?.send({ t: 'ev', ev: { k: 'shot', by: from, o: req.o, d: req.d, len: req.len, hit: req.hit } });
       if (pos) G.noises.push({ x: pos.x, z: pos.z, r: 26 });
+      break;
+    }
+    case 'pass': {
+      const P = W.items.passages.find((q) => q.id === req.id);
+      if (!P || !P.active || P.open || G.status[from] !== 'alive' || !pos) break;
+      const side = (pos.x - P.x) * P.nx + (pos.z - P.z) * P.nz > 0 ? 1 : -1;
+      emit({ k: 'passOpen', id: P.id, a: (P.alongX ? side : -side) * Math.PI / 2 * 0.94 });
+      G.noises.push({ x: P.x, z: P.z, r: 7 });
+      const tryClose = () => {
+        if (aiPlayers().some((p) => Math.hypot(p.x - P.x, p.z - P.z) < 1.1)) G.timers.push({ at: G.time + 1, fn: tryClose });
+        else emit({ k: 'passClose', id: P.id });
+      };
+      G.timers.push({ at: G.time + 5.5, fn: tryClose });
       break;
     }
     case 'hit': applyHit(req.pos); break;
@@ -809,16 +834,39 @@ function updateInteract(dt) {
   const fwd = camera.getWorldDirection(new THREE.Vector3());
   const it = world.items.findInteract(camera.position, fwd, { alive: true, names: G.names });
   G.focus = it;
-  if (!it) { prompt.hidden = true; ring.hidden = true; G.holdT = 0; return; }
+  if (!it) { prompt.hidden = true; ring.hidden = true; G.holdT = Math.max(0, G.holdT - dt * 0.3); return; }
+  const key = it.type + ':' + it.id;
+  if (G.holdKey !== key) { G.holdKey = key; G.holdT = 0; }
   prompt.hidden = false;
   const label = it.label.replace('Hold [E] to ', '');
   prompt.innerHTML = `<kbd>E</kbd>${it.hold ? 'Hold to ' : ''}${label}`;
-  if (it.hold) {
-    if (keys.KeyE) G.holdT += dt; else G.holdT = Math.max(0, G.holdT - dt * 2);
+  if (it.type === 'door' && it.hold) {
+    // forced stone stays forced: progress is kept if you run and come back
+    if (keys.KeyE) {
+      if (!G.doorMsg) { G.doorMsg = true; showMsg('The grinding echoes through the whole castle…', 3); }
+      G.doorProg = (G.doorProg || 0) + dt;
+      G.grindT -= dt;
+      if (G.grindT <= 0) { G.grindT = 1.1; audio.stoneGrind({ x: it.x, y: 1.2, z: it.z }, 1.1); player.trauma = Math.max(player.trauma, 0.18); makeNoise(it.x, it.z, 42); }
+    }
+    ring.hidden = !(G.doorProg > 0);
+    ring.firstElementChild.style.strokeDashoffset = 100.5 * (1 - Math.min(1, (G.doorProg || 0) / it.hold));
+    if (G.doorProg >= it.hold) { G.doorProg = 0; request({ k: 'door', id: it.id }); }
+  } else if (it.hold) {
+    if (keys.KeyE) {
+      G.holdT += dt;
+      if (it.type === 'door') {
+        G.grindT -= dt;
+        if (G.grindT <= 0) { G.grindT = 1.1; audio.stoneGrind({ x: it.x, y: 1.2, z: it.z }, 1.1); player.trauma = Math.max(player.trauma, 0.18); makeNoise(it.x, it.z, 42); }
+      }
+    } else G.holdT = Math.max(0, G.holdT - dt * (it.type === 'door' ? 0.3 : 2));
     ring.hidden = G.holdT <= 0;
     ring.firstElementChild.style.strokeDashoffset = 100.5 * (1 - Math.min(1, G.holdT / it.hold));
-    if (G.holdT >= it.hold) { G.holdT = 0; request({ k: 'sack', id: it.id }); }
+    if (G.holdT >= it.hold) { G.holdT = 0; request({ k: it.type, id: it.id }); }
   } else { ring.hidden = true; G.holdT = 0; }
+}
+function makeNoise(x, z, r) {
+  if (isHost()) G.noises.push({ x, z, r });
+  else net?.send({ t: 'req', req: { k: 'noise', x, z, r } });
 }
 function raySphere(o, d, c, r) {
   const ox = o.x - c.x, oy = o.y - c.y, oz = o.z - c.z;
@@ -1007,7 +1055,7 @@ function updateGame(dt, t) {
     if (d.whT <= 0 && !d.open && d.alpha > 0.3) {
       d.whT = R(3.5, 7);
       const c = camera.position;
-      if (Math.hypot(d.x - c.x, d.z - c.z) < 10) audio.whisper({ x: d.x, y: 1.2, z: d.z }, occlFrom(d.x, d.z), 0.09, 4);
+      if (Math.hypot(d.x - c.x, d.z - c.z) < 15) audio.whisper({ x: d.x, y: 1.2, z: d.z }, occlFrom(d.x, d.z), 0.11, 5);
     }
   }
   // phantom
@@ -1076,10 +1124,43 @@ function hostUpdate(dt) {
   const noises = G.noises; G.noises = [];
   S.think(dt, { players, noises, emit });
   W.elves.think(dt, { players, emit, santaDead: S.s.mode === 'dead' });
-  // secret doors come and go
-  G.doorT -= dt;
-  if (G.doorT <= 0) { G.doorT = R(32, 55); spawnDoor(); }
+  // hidden passages: a few are live at any time, and they keep moving
+  G.passT -= dt;
+  if (G.passT <= 0) {
+    G.passT = R(30, 50);
+    const ps = W.items.passages;
+    let act = ps.filter((p) => p.active).map((p) => p.id);
+    if (act.length >= 6) {
+      const closed = ps.filter((p) => p.active && !p.open);
+      if (closed.length) { const drop = closed[Math.floor(Math.random() * closed.length)].id; act = act.filter((id) => id !== drop); }
+    }
+    const off = ps.filter((p) => !act.includes(p.id));
+    while (act.length < 6 && off.length) act.push(off.splice(Math.floor(Math.random() * off.length), 1)[0].id);
+    emit({ k: 'passActive', ids: act });
+  }
+  // forcing the vault door is loud: after a few seconds of it, He comes out of the walls
+  const C = W.castle;
+  for (const n of noises) if (n.r >= 40 && C.inVault(n.x, n.z)) G.vaultAlarm++;
+  const inside = players.filter((p) => p.alive && C.inVault(p.x, p.z));
+  if (G.vaultAlarm >= 4 && inside.length && !C.inVault(S.s.x, S.s.z) && !['dead', 'stunned', 'feed'].includes(S.s.mode)) {
+    G.vaultAlarm = 0;
+    const door = W.items.doors.get(1);
+    const corners = [0, 1, 2, 3].map((k) => C.cornerPos(C.vault.x, C.vault.y, k));
+    const far = corners.reduce((a, b) => (Math.hypot(b[0] - door.x, b[1] - door.z) > Math.hypot(a[0] - door.x, a[1] - door.z) ? b : a));
+    S.s.x = far[0]; S.s.z = far[1];
+    S.setMode('notice'); S.ai.targetId = inside[0].id; S.ai.noticeDur = 0.9; S.ai.menace = 0;
+    emit({ k: 'vaultIn' });
+  }
+  if (C.inVault(S.s.x, S.s.z) && !inside.length) {
+    G.vaultIdle += dt;
+    if (G.vaultIdle > 4) {
+      G.vaultIdle = 0;
+      const [cx, cz] = C.center(C.vault.nx, C.vault.ny);
+      S.s.x = cx; S.s.z = cz; S.startSearch(3);
+    }
+  } else G.vaultIdle = 0;
   for (const d of [...W.items.doors.values()]) {
+    if (d.permanent) continue;
     const age = (Date.now() - d.born) / 1000;
     if ((!d.open && age > d.life) || (d.open && d.openT > 16)) emit({ k: 'door-', id: d.id });
   }
@@ -1101,12 +1182,12 @@ function hostUpdate(dt) {
 function spawnDoor() {
   const C = world.castle, items = world.items;
   const alive = aiPlayers().filter((p) => p.alive);
-  if (!alive.length || items.doors.size >= 2) return;
+  if (!alive.length || items.doors.size >= 1) return;
   const dists = alive.map((p) => { const [x, y] = C.cellAt(p.x, p.z); return C.bfs(x, y); });
-  const cands = C.doorFaces.filter((f) => dists.every((d) => d[f.y * C.N + f.x] >= 3) && [...items.doors.values()].every((o) => Math.abs(o.fx - f.x) + Math.abs(o.fy - f.y) >= 4));
+  const cands = C.doorFaces.filter((f) => f.outer && dists.every((d) => d[f.y * C.N + f.x] >= 3));
   if (!cands.length) return;
   const f = cands[Math.floor(Math.random() * cands.length)];
-  emit({ k: 'door+', d: { id: ++G.doorId, fx: f.x, fy: f.y, side: f.side, life: R(70, 100), age: 0 } });
+  emit({ k: 'door+', d: { id: ++G.doorId, fx: f.x, fy: f.y, side: f.side, life: R(75, 95), age: 0 } });
 }
 
 let hudCache = {};

@@ -206,6 +206,61 @@ function cloth(size, seed, base, stains = 0.5) {
   return { map: finish(c), normal: normalFromHeight(h, size, 1.5) };
 }
 
+// the page costume: purple / orange velvet panels separated by gold braid
+function pietVelvet(size, seed) {
+  const N = noiseSet(seed, [4, 8, 16, 32]);
+  const c = canvas(size), ctx = c.getContext('2d');
+  const img = ctx.createImageData(size, size);
+  const h = new Float32Array(size * size);
+  const panels = 6, pw = size / panels, bw = 6;
+  const cols = [[74, 30, 116], [186, 74, 24]];
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+    const p = Math.floor(x / pw), xin = x - p * pw;
+    const u = x / size, v = y / size;
+    const n = fbm(N, u, v);
+    const grime = 0.78 + fbm(N, u * 0.5 + 0.3, v * 0.5) * 0.3;
+    let col, hh;
+    const edge = Math.min(xin, pw - xin);
+    if (edge < bw) {
+      const zig = (y + Math.abs(edge - bw / 2) * 2) % 6 < 3 ? 1 : 0.62;
+      col = [205 * zig, 162 * zig, 64 * zig]; hh = 0.9;
+    } else {
+      const fold = 0.72 + 0.28 * Math.sin(((xin - bw) / (pw - 2 * bw)) * Math.PI);
+      const k = (0.6 + n * 0.5) * fold;
+      col = cols[p % 2].map((c2) => c2 * k); hh = fold * 0.6 + n * 0.15;
+    }
+    const i = (y * size + x) * 4;
+    img.data[i] = col[0] * grime; img.data[i + 1] = col[1] * grime; img.data[i + 2] = col[2] * grime; img.data[i + 3] = 255;
+    h[y * size + x] = hh;
+  }
+  ctx.putImageData(img, 0, 0);
+  return { map: finish(c), normal: normalFromHeight(h, size, 2.5) };
+}
+
+// gold brocade for the shoulder cape
+function brocade(size, seed) {
+  const N = noiseSet(seed, [8, 16, 32]);
+  const c = canvas(size), ctx = c.getContext('2d');
+  const img = ctx.createImageData(size, size);
+  const h = new Float32Array(size * size);
+  const cell = size / 8;
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+    const cx = (x % cell) / cell - 0.5, cy = (y % cell) / cell - 0.5;
+    const n = fbm(N, x / size, y / size);
+    const ring = Math.abs(Math.max(Math.abs(cx), Math.abs(cy)) - 0.32) < 0.06;
+    const dot = Math.hypot(cx, cy) < 0.12;
+    const cross = Math.abs(cx) < 0.03 || Math.abs(cy) < 0.03;
+    let col = [196, 162, 96];
+    if (ring) col = [92, 60, 34]; else if (dot) col = [40, 90, 96]; else if (cross) col = [150, 110, 60];
+    const k = 0.7 + n * 0.45;
+    const i = (y * size + x) * 4;
+    img.data[i] = col[0] * k; img.data[i + 1] = col[1] * k; img.data[i + 2] = col[2] * k; img.data[i + 3] = 255;
+    h[y * size + x] = ring || dot ? 0.8 : 0.4 + n * 0.2;
+  }
+  ctx.putImageData(img, 0, 0);
+  return { map: finish(c), normal: normalFromHeight(h, size, 2) };
+}
+
 function skin(size, seed) {
   const N = noiseSet(seed, [4, 8, 16, 32]);
   const V = noiseSet(seed + 3, [4, 8, 16]);
@@ -360,6 +415,9 @@ export function buildTextures() {
   T.carpet = cloth(256, 43, [80, 12, 14], 1.0);
   T.gold = cloth(128, 47, [150, 115, 50], 0.2);
   T.skin = skin(256, 53);
+  T.piet = pietVelvet(256, 61);
+  T.brocade = brocade(256, 67);
+  T.beret = cloth(256, 71, [176, 52, 26], 0.4);
   T.books = books(256, 59);
   T.flame = flame(64);
   T.glow = finish(radial(64, [[0, 'rgba(255,255,255,1)'], [0.25, 'rgba(255,255,255,0.5)'], [1, 'rgba(255,255,255,0)']]), true, false);
