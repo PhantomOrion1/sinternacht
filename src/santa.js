@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { R, clamp, damp, dampAngle, angleDiff, lerp, makeRng } from './rng.js';
 import { makeHead, hairStrands } from './faces.js';
 
-export const SANTA_MODES = ['wander', 'investigate', 'notice', 'chase', 'search', 'feed', 'stunned', 'retreat', 'dead'];
+export const SANTA_MODES = ['wander', 'investigate', 'notice', 'chase', 'search', 'feed', 'stunned', 'retreat', 'dead', 'watch'];
 const L1 = 0.72, L2 = 0.68, FOOT_H = 0.06, HEAD_R = 0.165;
 
 function limb(len, r0, r1, mat, seg = 8, up = false) {
@@ -347,6 +347,19 @@ export class Santa {
         }
         break;
       }
+      case 'watch': {
+        const p = alive.find((q) => q.id === ai.targetId);
+        if (p) s.yaw = dampAngle(s.yaw, Math.atan2(p.x - s.x, p.z - s.z), 0.4, dt);
+        const close = p && Math.hypot(p.x - s.x, p.z - s.z) < 11;
+        if (!p || ai.modeT > ai.watchDur || close) {
+          // gone, as if he was never there
+          const C2 = this.castle;
+          const cell = this.randomCell((x, y) => alive.every((q) => { const [qx, qy] = C2.cellAt(q.x, q.z); return Math.abs(qx - x) + Math.abs(qy - y) >= 4; }));
+          const [nx, nz] = C2.center(cell[0], cell[1]);
+          if (!alive.some((q) => C2.lineOfSight(q.x, q.z, s.x, s.z)) || ai.modeT > ai.watchDur + 6 || close) { s.x = nx; s.z = nz; ai.relief = 15; this.setMode('wander'); W.emit({ k: 'vanish' }); }
+        }
+        break;
+      }
       case 'feed': {
         s.yaw = dampAngle(s.yaw, ai.feedYaw || s.yaw, 4, dt);
         if (ai.modeT > 3.6) { ai.relief = 22; this.setMode('wander'); }
@@ -421,7 +434,7 @@ export class Santa {
         if (!best || d < best._d) best = p;
       } else ai.sus[p.id] = Math.max(0, prev - dt * 0.35);
     }
-    const busy = ['notice', 'chase', 'feed', 'stunned', 'dead'].includes(s.mode);
+    const busy = ['notice', 'chase', 'feed', 'stunned', 'dead', 'watch'].includes(s.mode);
     if (s.mode === 'chase') {
       // switch to a closer visible victim
       if (best && best.id !== ai.targetId && best._d < 5) ai.targetId = best.id;
@@ -475,6 +488,20 @@ export class Santa {
     W.emit({ k: 'tp' });
   }
 
+  // stand far off in the player's line of sight and just... watch
+  appearFar(p) {
+    const C = this.castle, s = this.s, ai = this.ai;
+    if (['chase', 'notice', 'feed', 'stunned', 'dead', 'watch'].includes(s.mode)) return false;
+    const fx = -Math.sin(p.camYaw), fz = -Math.cos(p.camYaw);
+    const free = C.rayWall(p.x, p.z, fx, fz, 34);
+    if (free < 14) return false;
+    const d = Math.min(free - 1.5, 13 + Math.random() * 7);
+    s.x = p.x + fx * d; s.z = p.z + fz * d;
+    s.yaw = Math.atan2(-fx, -fz);
+    this.setMode('watch'); ai.targetId = p.id; ai.watchDur = 6 + Math.random() * 6; ai.menace = 0;
+    return true;
+  }
+
   hit(shooterPos) {
     const s = this.s, ai = this.ai;
     if (s.mode === 'dead') return false;
@@ -523,7 +550,7 @@ export class Santa {
     // eyes always find you
     if (camPos) P.face.look(camPos, 0.62);
     // stop-motion: when stalking, the pose updates in jerky 11fps steps
-    const stepped = !chase && !this.scare && mode !== 'stunned';
+    const stepped = !chase && !this.scare && mode !== 'stunned' && mode !== 'watch';
     v.accum = (v.accum || 0) + dt;
     if (stepped && v.accum < 1 / 11) { this.place(); return; }
     const pdt = stepped ? v.accum : dt;
@@ -594,6 +621,7 @@ export class Santa {
     let hy = v.headYaw, hp = v.headPitch, hz = twHead * 0.6 + Math.sin(t * 0.7) * 0.12;
     if (chase) { hz += Math.sin(t * 31) * 0.1; hy += Math.sin(t * 23) * 0.06; }
     if (mode === 'stunned') { hp = 0.8; hz += Math.sin(t * 25) * 0.4; }
+    if (mode === 'watch') { hz = Math.sin(t * 0.35) * 0.9; hy = Math.sin(t * 0.21) * 0.25; hp = -0.15 + Math.sin(t * 0.5) * 0.1; P.body.position.x += Math.sin(t * 0.6) * 0.06; }
     if (dead) hp = 1.1 * Math.min(1, v.death);
     // the grin never changes; the jaw does
     let jaw = 0.02 + Math.sin(t * 2.7) * 0.015 + v.reach * 0.25 + (mode === 'notice' ? 0.55 : 0) + (mode === 'feed' ? 0.3 + Math.sin(t * 16) * 0.25 : 0) + (mode === 'stunned' ? 0.8 : 0) + (dead ? 0.6 * Math.min(1, v.death) : 0);
@@ -615,10 +643,10 @@ export class Santa {
     tmpQ2.setFromEuler(tmpE);
     P.head.quaternion.copy(tmpQ.invert().multiply(tmpQ2));
     // eyeshine
-    const glow = dead ? Math.max(0, 1 - v.death) : this.scare ? 0 : chase ? 1 : 0.55;
+    const glow = dead ? Math.max(0, 1 - v.death) : this.scare ? 0 : chase || mode === 'watch' ? 1 : 0.55;
     this.glowMat.opacity = glow * (0.85 + Math.random() * 0.15);
     this.glowMat.color.setHex(chase ? 0xff6040 : 0xffe0b0);
-    P.glows.forEach((g) => g.scale.setScalar(chase ? 0.42 : 0.3));
+    P.glows.forEach((g) => g.scale.setScalar(chase ? 0.42 : mode === 'watch' ? 0.45 : 0.3));
     if (this.scare) { if (camPos) P.face.look(camPos, 0.62); this.placeForScare(t); }
   }
   place() {

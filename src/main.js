@@ -609,6 +609,15 @@ function applyEvent(ev) {
       break;
     }
     case 'passActive': W.items.setPassagesActive(ev.ids); break;
+    case 'vanish': break;
+    case 'smash': {
+      const pr = W.elves.smash(ev.e, ev.p, ev.x, ev.z, ev.a, ev.s);
+      if (pr) {
+        const o = occlFrom(ev.x, ev.z);
+        setTimeout(() => { audio.doorSlam({ x: ev.x, y: 0.5, z: ev.z }, o); audio.thunk({ x: ev.x, y: 0.5, z: ev.z }); if (Math.random() < 0.5) audio.chains({ x: ev.x, y: 0.4, z: ev.z }, o); }, 480);
+      }
+      break;
+    }
     case 'vaultIn': {
       const S2 = W.santa;
       audio.doorSlam({ x: S2.s.x, y: 1.5, z: S2.s.z }, 0);
@@ -1140,6 +1149,28 @@ function updateGame(dt, t) {
       if (Math.hypot(d.x - c.x, d.z - c.z) < 15) audio.whisper({ x: d.x, y: 1.2, z: d.z }, occlFrom(d.x, d.z), 0.11, 5);
     }
   }
+  // turning around fast: 5% chance one is standing right behind you, face to face
+  G.yawHist = G.yawHist || [];
+  G.yawHist.push([G.time, player.yaw]);
+  while (G.yawHist.length && G.time - G.yawHist[0][0] > 0.6) G.yawHist.shift();
+  G.behindCd = (G.behindCd || 0) - dt;
+  if (alive && !G.scare && G.behindCd <= 0 && G.yawHist.length > 2 && !G.phantom.root.visible) {
+    const turned = Math.abs(angleDiff(G.yawHist[0][1], player.yaw));
+    if (turned > 2.2) {
+      G.behindCd = 4;
+      if (Math.random() < 0.05) {
+        G.behindCd = 40;
+        const f = camera.getWorldDirection(new THREE.Vector3()); f.y = 0; f.normalize();
+        const ph = G.phantom;
+        ph.root.visible = true;
+        ph.root.position.set(camera.position.x + f.x * 0.75, 0, camera.position.z + f.z * 0.75);
+        ph.root.rotation.y = Math.atan2(-f.x, -f.z);
+        G.phantomT = 1.1; G.phantomClose = true;
+        audio.sting(); audio.whisper({ x: ph.root.position.x, y: 1.6, z: ph.root.position.z }, 0, 0.4, 3);
+        player.trauma = Math.max(player.trauma, 0.5);
+      }
+    }
+  }
   // phantom
   if (G.phantom?.root.visible) {
     G.phantomT -= dt;
@@ -1147,7 +1178,7 @@ function updateGame(dt, t) {
     const dd = Math.hypot(p.x - camera.position.x, p.z - camera.position.z);
     G.phantom.head.rotation.y = Math.atan2(camera.position.x - p.x, camera.position.z - p.z) - G.phantom.root.rotation.y;
     G.phantom.face.look(camera.position);
-    if (G.phantomT <= 0 || dd < 6.5) G.phantom.root.visible = false;
+    if (G.phantomT <= 0 || (dd < 6.5 && !G.phantomClose)) { G.phantom.root.visible = false; G.phantomClose = false; }
   }
   updateInteract(dt);
   updateWeapon(dt, t);
@@ -1170,6 +1201,11 @@ function updateGame(dt, t) {
   player.updateLight(dt, t, { danger, forceOn: G.spectate ? G.remote.state.flash : false });
   if (G.spectate) player.light.intensity = G.remote.state.flash ? 60 : 0;
   if (G.scare) { player.light.intensity *= 0.05; player.fill.intensity = 0; }
+  // a faint cold light to stand in when He's watching from far away
+  G.watchLight ||= { x: 0, y: 2.6, z: 0, color: 0x8898b8, power: 0, range: 6, flicker: 0.08 };
+  if (!C.lights.includes(G.watchLight)) C.lights.push(G.watchLight);
+  if (S.s.mode === 'watch') { G.watchLight.x = S.v.x + Math.sin(S.v.yaw) * 1.2; G.watchLight.z = S.v.z + Math.cos(S.v.yaw) * 1.2; G.watchLight.power = 1.6; }
+  else G.watchLight.power = 0;
   updateLights(dt, t);
   // lightning
   if (lightning >= 0) {
@@ -1216,6 +1252,13 @@ function hostUpdate(dt) {
   const noises = G.noises; G.noises = [];
   S.think(dt, { players, noises, emit });
   W.elves.think(dt, { players, emit, santaDead: S.s.mode === 'dead' });
+  // now and then He is just... standing there, far away, watching
+  G.sightT = (G.sightT ?? R(45, 80)) - dt;
+  if (G.sightT <= 0) {
+    G.sightT = R(55, 110);
+    const alive = players.filter((p) => p.alive && !W.castle.inVault(p.x, p.z));
+    if (alive.length) W.santa.appearFar(alive[Math.floor(Math.random() * alive.length)]) || (G.sightT = 8);
+  }
   // hidden passages: a few are live at any time, and they keep moving
   G.passT -= dt;
   if (G.passT <= 0) {

@@ -873,6 +873,8 @@ export class Castle {
       const [cx, cz] = this.center(c.x, c.y);
       this.elfSpots.push(p ? { x: p[0], z: p[1] } : { x: cx + rng.range(-1, 1), z: cz + rng.range(-1, 1) });
     }
+    // a couple of rare rooms where a helper is wrecking the place
+    this.rageRooms = rng.shuffle(this.cells.filter((c) => this.spawnDist[c.y * N + c.x] >= 3 && c.hall < 0 && !(c.x === this.vault.x && c.y === this.vault.y))).slice(0, 2).map((c) => ({ x: c.x, y: c.y }));
     // possible secret-door spots: bare solid wall faces
     this.doorFaces = [];
     for (const c of this.cells) for (let s = 0; s < 4; s++) {

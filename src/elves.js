@@ -5,7 +5,7 @@ import * as THREE from 'three';
 import { makeRng, R, clamp, damp, dampAngle, angleDiff } from './rng.js';
 import { makeHead } from './faces.js';
 
-export const ELF_MODES = ['idle', 'crawl', 'stand', 'charge', 'flee', 'grab', 'gone', 'dead'];
+export const ELF_MODES = ['idle', 'crawl', 'stand', 'charge', 'flee', 'grab', 'gone', 'dead', 'rage'];
 const TOUCH = 0.72;
 const EL1 = 0.44, EL2 = 0.42, HEAD_R = 0.105;
 
@@ -142,23 +142,58 @@ export class Elves {
       feather: new THREE.MeshStandardMaterial({ color: 0x3aaa6a, roughness: 0.85, emissive: 0x06140c, side: THREE.DoubleSide }),
     };
     this.glowMat = new THREE.SpriteMaterial({ map: T.glow, color: 0xe8eeff, blending: THREE.AdditiveBlending, depthWrite: false, fog: false, opacity: 0.45 });
-    const types = rng.shuffle(['crawler', 'crawler', 'crawler', 'crawler', 'crawler', 'stander', 'stander', 'stander', 'stander', 'runner', 'runner', 'runner']);
+    const types = rng.shuffle(['crawler', 'crawler', 'stander', 'stander', 'stander', 'stander', 'stander', 'stander', 'runner', 'runner', 'runner', 'runner']);
     this.list = castle.elfSpots.map((sp, i) => {
       const type = types[i % types.length];
       const model = buildElf(M, this.glowMat, rng);
       this.group.add(model.root);
       const mode = type === 'stander' ? 'stand' : 'idle';
       return {
-        i, type, model,
+        i, type, model, fast: type === 'crawler' && rng.chance(0.1),
         s: { x: sp.x, z: sp.z, yaw: rng.range(-Math.PI, Math.PI), mode },
         v: { x: sp.x, z: sp.z, yaw: 0, phase: rng.range(0, 6), head: 0, prevMode: mode, sndT: rng.range(1, 5), vis: 1 },
         ai: { t: 0, burst: 0, burstCd: 1, losT: 0, los: false, respawn: 0, reloc: rng.range(25, 45), path: null, pi: 0, repath: 0 },
       };
     });
+    // the wreckers: one helper per rare room, flipping tables and smashing chairs
+    M.wood = new THREE.MeshStandardMaterial({ map: T.wood.map, normalMap: T.wood.normal, roughness: 0.8 });
+    for (const rr of castle.rageRooms || []) {
+      const [cx, cz] = castle.center(rr.x, rr.y);
+      const model = buildElf(M, this.glowMat, rng);
+      this.group.add(model.root);
+      const props = [this.makeProp('table', cx - 1.2, cz + 0.4, rng), this.makeProp('chair', cx + 1.3, cz - 0.9, rng), this.makeProp('crate', cx + 0.2, cz - 1.6, rng), this.makeProp('chair', cx - 0.6, cz - 1.0, rng)];
+      this.list.push({
+        i: this.list.length, type: 'rager', model, props, room: [cx, cz],
+        s: { x: cx, z: cz, yaw: 0, mode: 'rage' },
+        v: { x: cx, z: cz, yaw: 0, phase: 0, head: 0, prevMode: 'rage', sndT: 2, vis: 1, smashT: 9 },
+        ai: { t: 0, burst: 0, burstCd: 1, losT: 0, los: false, respawn: 0, reloc: 999, path: null, pi: 0, repath: 0, target: 0, wait: 1 },
+      });
+    }
     this.isHost = true;
     this.scare = null;
     this.onSound = null;
     this.onPoof = null;
+  }
+
+  makeProp(kind, x, z, rng) {
+    const g = new THREE.Group(), W = this.M.wood;
+    const box = (w, h, d, px, py, pz) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), W); m.position.set(px, py, pz); m.castShadow = true; m.receiveShadow = true; g.add(m); };
+    if (kind === 'table') { box(1.5, 0.07, 0.85, 0, 0.76, 0); for (const sx of [-0.68, 0.68]) for (const sz of [-0.36, 0.36]) box(0.07, 0.74, 0.07, sx, 0.37, sz); }
+    else if (kind === 'chair') { box(0.45, 0.05, 0.45, 0, 0.46, 0); box(0.45, 0.6, 0.05, 0, 0.78, -0.2); for (const sx of [-0.19, 0.19]) for (const sz of [-0.19, 0.19]) box(0.05, 0.45, 0.05, sx, 0.22, sz); }
+    else box(0.62, 0.62, 0.62, 0, 0.31, 0);
+    g.position.set(x, 0, z);
+    g.rotation.y = rng.range(0, 6);
+    this.group.add(g);
+    return { g, x, z, rx: 0, rz: 0, anim: null };
+  }
+  // a prop gets flung: both machines animate the same thing
+  smash(ei, pi, tx, tz, axis, sgn) {
+    const e = this.list[ei], pr = e?.props?.[pi];
+    if (!pr) return null;
+    pr.anim = { t: 0, fx: pr.x, fz: pr.z, tx, tz, frx: pr.rx, frz: pr.rz, trx: pr.rx + (axis ? 0 : sgn * Math.PI), trz: pr.rz + (axis ? sgn * Math.PI : 0), fy: pr.g.rotation.y, ty: pr.g.rotation.y + sgn * R(0.5, 1.6) };
+    pr.x = tx; pr.z = tz; pr.rx = pr.anim.trx; pr.rz = pr.anim.trz;
+    e.v.smashT = 0;
+    return pr;
   }
 
   netState() {
@@ -221,7 +256,8 @@ export class Elves {
         ai.respawn -= dt;
         if (ai.respawn <= 0) {
           const sp = this.spotFor(e, alive, 10);
-          if (sp) { s.x = sp.x; s.z = sp.z; s.mode = e.type === 'stander' ? 'stand' : 'idle'; ai.t = 0; ai.path = null; }
+          if (e.type === 'rager') { s.x = e.room[0]; s.z = e.room[1]; s.mode = 'rage'; ai.t = 0; }
+          else if (sp) { s.x = sp.x; s.z = sp.z; s.mode = e.type === 'stander' ? 'stand' : 'idle'; ai.t = 0; ai.path = null; }
           else ai.respawn = 3;
         }
         continue;
@@ -264,8 +300,22 @@ export class Elves {
           ai.burstCd -= dt;
           if (ai.burst > 0) ai.burst -= dt;
           else if (ai.burstCd <= 0) { ai.burst = R(0.4, 0.8); ai.burstCd = R(1.6, 3.4); }
-          const sp = ai.burst > 0 ? 3.0 : plos && dp < 10 ? 1.5 : 1.1;
+          const sp = (ai.burst > 0 ? 3.0 : plos && dp < 10 ? 1.5 : 1.1) * (e.fast ? 2 : 1);
           this.chase(e, prey, sp, dt, plos);
+        }
+      } else if (e.type === 'rager') {
+        s.mode = 'rage';
+        if (ai.wait > 0) { ai.wait -= dt; if (p) s.yaw = dampAngle(s.yaw, s.yaw + Math.sin(ai.t * 9) * 0.5, 6, dt); continue; }
+        const pr = e.props[ai.target];
+        const d2 = this.move(e, pr.x, pr.z, 2.3, dt);
+        if (d2 < 0.95) {
+          const ang = Math.atan2(pr.x - s.x, pr.z - s.z) + R(-0.6, 0.6), dist = R(0.7, 1.6);
+          const [cx, cz] = e.room;
+          const tx = Math.max(cx - 2.4, Math.min(cx + 2.4, pr.x + Math.sin(ang) * dist));
+          const tz = Math.max(cz - 2.4, Math.min(cz + 2.4, pr.z + Math.cos(ang) * dist));
+          W.emit({ k: 'smash', e: e.i, p: ai.target, x: tx, z: tz, a: Math.random() < 0.5 ? 1 : 0, s: Math.random() < 0.5 ? 1 : -1 });
+          ai.wait = R(0.9, 2.2);
+          let n = ai.target; while (n === ai.target) n = Math.floor(Math.random() * e.props.length); ai.target = n;
         }
       } else if (e.type === 'stander') {
         if (p) s.yaw = dampAngle(s.yaw, Math.atan2(p.x - s.x, p.z - s.z), 0.6, dt);
@@ -321,10 +371,21 @@ export class Elves {
         v.prevMode = mode;
       }
       const dCam = Math.hypot(camPos.x - v.x, camPos.z - v.z);
+      if (e.props) for (const pr of e.props) {
+        if (!pr.anim) continue;
+        const A = pr.anim; A.t += dt;
+        const k = Math.min(1, A.t / 0.55), ease = 1 - (1 - k) * (1 - k);
+        pr.g.position.set(A.fx + (A.tx - A.fx) * ease, Math.sin(k * Math.PI) * 0.9 + (k >= 1 ? 0 : 0), A.fz + (A.tz - A.fz) * ease);
+        pr.g.rotation.set(A.frx + (A.trx - A.frx) * ease, A.fy + (A.ty - A.fy) * ease, A.frz + (A.trz - A.frz) * ease);
+        // an upside-down table rests on its top
+        if (k >= 1) { const flipped = Math.abs(Math.cos(pr.rx) * Math.cos(pr.rz)) < 0.5 ? 0 : 0; pr.g.position.y = Math.cos(pr.rx) * Math.cos(pr.rz) < 0 ? (pr.g.children[0].position.y + 0.04) : flipped; pr.anim = null; }
+      }
+      v.smashT = (v.smashT ?? 9) + dt;
       v.sndT -= dt;
       if (v.sndT <= 0) {
         v.sndT = R(0.7, 1.4);
         if (mode === 'crawl' && dCam < 26 && v.spd > 0.2) hear?.('scratch', v.x, v.z);
+        else if (mode === 'rage' && dCam < 30 && Math.random() < 0.35) { hear?.('giggle', v.x, v.z); v.sndT = R(1.5, 4); }
         else if (mode === 'stand' && dCam < 7 && Math.random() < 0.25) { hear?.('whisper', v.x, v.z); v.sndT = R(6, 12); }
         else if (mode === 'idle' && e.type === 'runner' && dCam < 9 && Math.random() < 0.2) { hear?.('giggle', v.x, v.z); v.sndT = R(5, 10); }
       }
@@ -334,8 +395,36 @@ export class Elves {
       m.root.position.set(v.x, 0, v.z);
       m.root.rotation.set(0, v.yaw, 0);
       this.pose(e, dt, t, camPos);
+      if (e.type === 'crawler') this.wallCling(e, dt, camPos);
       if (this.scare && this.scare.index === e.i) this.placeForScare(e, t);
     }
+  }
+
+  // idle crawlers hang high up on the nearest wall; when they sense you they scuttle down
+  wallCling(e, dt, camPos) {
+    const v = e.v, m = e.model, C = this.castle;
+    const want = e.s.mode === 'idle' ? 1 : 0;
+    v.climb = (v.climb ?? want) + (want - (v.climb ?? want)) * Math.min(1, dt * (want ? 0.8 : 5));
+    if (v.climb < 0.01) return;
+    if (!v.wallAt || Math.hypot(v.wallAt[0] - v.x, v.wallAt[1] - v.z) > 0.4) {
+      v.wallAt = [v.x, v.z]; v.wall = null;
+      let best = null;
+      for (let k = 0; k < 8; k++) {
+        const a = (k / 8) * Math.PI * 2, dx = Math.sin(a), dz = Math.cos(a);
+        for (let d = 0.2; d < 2.5; d += 0.1) if (C.solidAt(v.x + dx * d, v.z + dz * d)) { if (!best || d < best.d) best = { d, dx, dz }; break; }
+      }
+      if (best) v.wall = best;
+    }
+    if (!v.wall) return;
+    const W2 = v.wall, n = new THREE.Vector3(-W2.dx, 0, -W2.dz);
+    const zAxis = new THREE.Vector3(0, 1, 0), xAxis = new THREE.Vector3().crossVectors(n, zAxis);
+    const qWall = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(xAxis, n, zAxis));
+    const k = v.climb * v.climb * (3 - 2 * v.climb);
+    m.root.quaternion.slerp(qWall, k);
+    const wx = v.x + W2.dx * (W2.d - 0.02), wz = v.z + W2.dz * (W2.d - 0.02);
+    m.root.position.set(v.x + (wx - v.x) * k, 1.5 * k, v.z + (wz - v.z) * k);
+    m.root.updateMatrixWorld(true);
+    m.head.lookAt(camPos);
   }
 
   pose(e, dt, t, camPos) {
@@ -346,6 +435,24 @@ export class Elves {
     m.face.setJaw(scared ? 0.85 + Math.sin(t * 40) * 0.08 : mode === 'grab' ? 0.6 : 0);
     if (dCam < 16 || scared) m.face.look(camPos, 0.6);
     m.glows.forEach((g) => g.scale.setScalar(scared ? 0 : 0.25));
+    if (mode === 'rage') {
+      // smashing: arms up, slam down, head thrashing
+      const st = v.smashT;
+      v.phase += dt * (v.spd > 0.3 ? 11 : 2);
+      const run = v.spd > 0.3 ? Math.sin(v.phase) : 0;
+      m.pelvis.position.y = 0.95;
+      m.legs.forEach((l, i) => { const s2 = Math.sin(v.phase + i * Math.PI) * (v.spd > 0.3 ? 0.6 : 0); l.hip.rotation.set(-s2 - 0.15, 0, 0); l.knee.rotation.x = 0.3 + Math.max(0, -Math.cos(v.phase + i * Math.PI)) * 0.9; l.ankle.rotation.x = 0; });
+      let armX, lean;
+      if (st < 0.22) { armX = -2.9 * (st / 0.22); lean = -0.15; }
+      else if (st < 0.45) { armX = -2.9 + 2.5 * ((st - 0.22) / 0.23); lean = 0.7; }
+      else { armX = -0.3 + run * 0.6 + Math.sin(t * 13 + e.i) * 0.25; lean = 0.35; }
+      m.torso.rotation.set(lean, Math.sin(t * 7) * 0.2, Math.sin(t * 11) * 0.08);
+      m.arms.forEach((a, i) => { a.sh.rotation.set(armX + (i ? 0.1 : -0.1), 0, (i ? -1 : 1) * 0.25); a.el.rotation.x = -0.5; a.hand.rotation.x = 0; });
+      m.neck.rotation.set(0, 0, 0);
+      m.head.rotation.set(0.2 + Math.sin(t * 17) * 0.15, Math.sin(t * 23) * 0.35, Math.sin(t * 29) * 0.3);
+      m.face.setJaw(0.5 + Math.sin(t * 9) * 0.3);
+      return;
+    }
     if (mode === 'dead') {
       m.pelvis.position.y = damp(m.pelvis.position.y, 0.15, 3, dt);
       m.torso.rotation.x = damp(m.torso.rotation.x, 1.5, 3, dt);
@@ -353,34 +460,33 @@ export class Elves {
       return;
     }
     if (mode === 'crawl' || (mode === 'idle' && e.type === 'crawler')) {
-      // spider-crawl: body low, knees and elbows splayed high, limbs placed in jerky snaps,
-      // freezing now and then — and the head twisted upside down, staring up at you
+      // stalking lizard-crawl: chest up, arms planted wide with elbows out, legs splayed like a frog,
+      // diagonal limbs moving together in slow, deliberate pulls — head up, staring at you
       v.twT = (v.twT ?? 0) - dt;
-      if (v.twT <= 0) { v.twT = R(0.6, 2.4); v.freeze = Math.random() < 0.35 ? R(0.25, 0.7) : 0; v.jerk = R(-0.5, 0.5); }
+      if (v.twT <= 0) { v.twT = R(1.2, 3.5); v.freeze = Math.random() < 0.3 ? R(0.4, 1.0) : 0; }
       if (v.freeze > 0) v.freeze -= dt;
-      else v.phase += dt * (0.6 + v.spd * 5.5);
-      const ph = Math.floor(v.phase * 4) / 4; // stop-motion steps
-      const step = (k) => Math.sin(ph + k);
-      m.pelvis.position.y = 0.36 + Math.abs(step(0)) * 0.03;
-      m.torso.rotation.set(1.42, step(0.5) * 0.18, step(0) * 0.12);
+      else v.phase += dt * (1.2 + v.spd * 4.5);
+      const ph = v.phase;
+      const pull = (k) => Math.sin(ph + k);
+      m.pelvis.position.y = 0.42 + Math.abs(pull(0)) * 0.025;
+      m.torso.rotation.set(1.12, pull(0) * 0.14, pull(Math.PI / 2) * 0.08);
       m.legs.forEach((l, i) => {
-        const sw = Math.sin(ph + i * Math.PI) * 0.4;
-        l.hip.rotation.set(-0.35 + sw, 0, (i ? -1 : 1) * 0.75);
-        l.knee.rotation.x = 1.9 - sw * 0.4;
-        l.ankle.rotation.x = 0.6;
+        const sw = pull(i ? Math.PI : 0);
+        l.hip.rotation.set(-0.85 + sw * 0.35, 0, (i ? -1 : 1) * 0.85);
+        l.knee.rotation.x = 2.1 - Math.max(0, sw) * 0.5;
+        l.ankle.rotation.x = 0.3;
       });
       m.arms.forEach((a, i) => {
-        const sw = Math.sin(ph + (i ? 0 : Math.PI)) * 0.5;
+        const sw = pull(i ? 0 : Math.PI); // diagonal pair with the opposite leg
         const lift = Math.max(0, sw);
-        a.sh.rotation.set(-1.0 + sw * 0.8, 0, (i ? -1 : 1) * (0.95 + lift * 0.3));
-        a.el.rotation.x = -1.35 - lift * 0.5;
-        a.hand.rotation.x = 1.0;
+        a.sh.rotation.set(-1.2 - sw * 0.35, 0, (i ? 1 : -1) * (0.6 + lift * 0.2));
+        a.el.rotation.x = -0.35 - lift * 0.6;
+        a.hand.rotation.x = 0.9 - lift * 0.5;
       });
-      m.neck.rotation.set(-1.3, 0, 0);
-      // face the camera, upside down, with a twitch
+      m.neck.rotation.set(-0.95, 0, 0);
       m.root.updateMatrixWorld(true);
       m.head.lookAt(camPos);
-      m.head.rotateZ(Math.PI * 0.92 + (v.freeze > 0 ? v.jerk : 0) + Math.sin(t * 9) * 0.04);
+      m.head.rotateZ(Math.sin(t * 0.7 + e.i) * 0.12 + (v.freeze > 0 ? 0.25 : 0));
       return;
     }
     const running = mode === 'charge' || mode === 'flee';
