@@ -305,16 +305,16 @@ export class Elves {
         }
       } else if (e.type === 'rager') {
         s.mode = 'rage';
-        if (ai.wait > 0) { ai.wait -= dt; if (p) s.yaw = dampAngle(s.yaw, s.yaw + Math.sin(ai.t * 9) * 0.5, 6, dt); continue; }
+        if (ai.wait > 0) { ai.wait -= dt; s.yaw += Math.sin(ai.t * 31) * dt * 6; continue; }
         const pr = e.props[ai.target];
-        const d2 = this.move(e, pr.x, pr.z, 2.3, dt);
+        const d2 = this.move(e, pr.x, pr.z, 5.0, dt);
         if (d2 < 0.95) {
-          const ang = Math.atan2(pr.x - s.x, pr.z - s.z) + R(-0.6, 0.6), dist = R(0.7, 1.6);
+          const ang = Math.atan2(pr.x - s.x, pr.z - s.z) + R(-0.8, 0.8), dist = R(1.0, 2.2);
           const [cx, cz] = e.room;
           const tx = Math.max(cx - 2.4, Math.min(cx + 2.4, pr.x + Math.sin(ang) * dist));
           const tz = Math.max(cz - 2.4, Math.min(cz + 2.4, pr.z + Math.cos(ang) * dist));
           W.emit({ k: 'smash', e: e.i, p: ai.target, x: tx, z: tz, a: Math.random() < 0.5 ? 1 : 0, s: Math.random() < 0.5 ? 1 : -1 });
-          ai.wait = R(0.9, 2.2);
+          ai.wait = R(0.2, 0.6);
           let n = ai.target; while (n === ai.target) n = Math.floor(Math.random() * e.props.length); ai.target = n;
         }
       } else if (e.type === 'stander') {
@@ -385,7 +385,7 @@ export class Elves {
       if (v.sndT <= 0) {
         v.sndT = R(0.7, 1.4);
         if (mode === 'crawl' && dCam < 26 && v.spd > 0.2) hear?.('scratch', v.x, v.z);
-        else if (mode === 'rage' && dCam < 30 && Math.random() < 0.35) { hear?.('giggle', v.x, v.z); v.sndT = R(1.5, 4); }
+        else if (mode === 'rage' && dCam < 30) { hear?.(Math.random() < 0.6 ? 'giggle' : 'scratch', v.x, v.z); v.sndT = R(0.4, 1.2); }
         else if (mode === 'stand' && dCam < 7 && Math.random() < 0.25) { hear?.('whisper', v.x, v.z); v.sndT = R(6, 12); }
         else if (mode === 'idle' && e.type === 'runner' && dCam < 9 && Math.random() < 0.2) { hear?.('giggle', v.x, v.z); v.sndT = R(5, 10); }
       }
@@ -438,15 +438,15 @@ export class Elves {
     if (mode === 'rage') {
       // smashing: arms up, slam down, head thrashing
       const st = v.smashT;
-      v.phase += dt * (v.spd > 0.3 ? 11 : 2);
+      v.phase += dt * (v.spd > 0.3 ? 18 : 6);
       const run = v.spd > 0.3 ? Math.sin(v.phase) : 0;
       m.pelvis.position.y = 0.95;
       m.legs.forEach((l, i) => { const s2 = Math.sin(v.phase + i * Math.PI) * (v.spd > 0.3 ? 0.6 : 0); l.hip.rotation.set(-s2 - 0.15, 0, 0); l.knee.rotation.x = 0.3 + Math.max(0, -Math.cos(v.phase + i * Math.PI)) * 0.9; l.ankle.rotation.x = 0; });
       let armX, lean;
-      if (st < 0.22) { armX = -2.9 * (st / 0.22); lean = -0.15; }
-      else if (st < 0.45) { armX = -2.9 + 2.5 * ((st - 0.22) / 0.23); lean = 0.7; }
-      else { armX = -0.3 + run * 0.6 + Math.sin(t * 13 + e.i) * 0.25; lean = 0.35; }
-      m.torso.rotation.set(lean, Math.sin(t * 7) * 0.2, Math.sin(t * 11) * 0.08);
+      if (st < 0.1) { armX = -2.9 * (st / 0.1); lean = -0.2; }
+      else if (st < 0.22) { armX = -2.9 + 2.6 * ((st - 0.1) / 0.12); lean = 0.85; }
+      else { armX = -0.6 + run * 0.9 + Math.sin(t * 27 + e.i) * 0.7; lean = 0.5; }
+      m.torso.rotation.set(lean + Math.sin(t * 19) * 0.15, Math.sin(t * 17) * 0.45, Math.sin(t * 23) * 0.2);
       m.arms.forEach((a, i) => { a.sh.rotation.set(armX + (i ? 0.1 : -0.1), 0, (i ? -1 : 1) * 0.25); a.el.rotation.x = -0.5; a.hand.rotation.x = 0; });
       m.neck.rotation.set(0, 0, 0);
       m.head.rotation.set(0.2 + Math.sin(t * 17) * 0.15, Math.sin(t * 23) * 0.35, Math.sin(t * 29) * 0.3);

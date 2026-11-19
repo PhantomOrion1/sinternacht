@@ -656,23 +656,37 @@ export class AudioEngine {
     }
     setTimeout(() => o.disconnect(), 3000);
   }
+  // the helpers sound nothing like Him: a shrill, giggling, chattering shriek — high, fast, insect-like
   grabScare() {
     if (!this.ready) return;
     const t = this.t;
-    const o = this.gain(1.2);
+    const o = this.gain(1.3);
     o.connect(this.scareIn);
-    const n = this.noiseSrc(t, 0.4), nf = this.filt('lowpass', 6000), ng = this.gain(0);
-    this.env(ng, t, 0.001, 1.4, 0.35); n.connect(nf); nf.connect(ng); ng.connect(o);
-    const sub = this.osc('sine', 110, t, 0.9); sub.frequency.exponentialRampToValueAtTime(40, t + 0.8);
-    const sg = this.gain(0); this.env(sg, t, 0.003, 1.3, 0.8); sub.connect(sg); sg.connect(o);
-    this.scream(t, o, { base: 1100, dur: 1.1, vol: 1.3, rise: 1.3, voices: 6 });
-    // chittering
-    for (let i = 0; i < 18; i++) {
-      const tt = t + 0.1 + i * 0.06;
-      const os = this.osc('square', R(1800, 3200), tt, 0.04), g = this.gain(0);
-      this.env(g, tt, 0.002, 0.25, 0.03); os.connect(g); g.connect(o);
+    // sharp crack on contact
+    const n = this.noiseSrc(t, 0.12), nf = this.filt('highpass', 2500), ng = this.gain(0);
+    this.env(ng, t, 0.001, 1.6, 0.1); n.connect(nf); nf.connect(ng); ng.connect(o);
+    // shrill giggle-shriek: fast pulsing high voice, pitch jumping
+    let tt = t;
+    for (let i = 0; i < 11; i++) {
+      const f = R(1600, 2600) * (1 + i * 0.03), d = R(0.06, 0.1);
+      const os = this.osc('square', f, tt, d + 0.02); os.frequency.exponentialRampToValueAtTime(f * 0.7, tt + d);
+      const bp = this.filt('bandpass', 3000, 2), g = this.gain(0); this.env(g, tt, 0.004, 0.9, d);
+      os.connect(bp); bp.connect(g); g.connect(o);
+      tt += d + R(0.005, 0.03);
     }
-    setTimeout(() => o.disconnect(), 2500);
+    // glassy screech underneath
+    for (const f of [3200, 3350, 4700]) {
+      const s2 = this.osc('sawtooth', f, t, 1.0); s2.frequency.linearRampToValueAtTime(f * 1.15, t + 0.9);
+      const v = this.osc('sine', 45, t, 1), vg = this.gain(f * 0.04); v.connect(vg); vg.connect(s2.frequency);
+      const g = this.gain(0); this.env(g, t, 0.01, 0.35, 0.3, 0.5); s2.connect(g); g.connect(o);
+    }
+    // insect chatter / teeth clicking
+    for (let i = 0; i < 40; i++) {
+      const c = t + i * 0.025 + R(0, 0.01);
+      const cs = this.noiseSrc(c, 0.012), cf = this.filt('bandpass', R(4000, 8000), 6), cg = this.gain(0);
+      this.env(cg, c, 0.001, 0.8, 0.01); cs.connect(cf); cf.connect(cg); cg.connect(o);
+    }
+    setTimeout(() => o.disconnect(), 2000);
   }
   tinnitus() {
     if (!this.ready) return;
