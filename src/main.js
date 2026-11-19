@@ -570,7 +570,7 @@ function applyEvent(ev) {
     }
     case 'grab': {
       if (ev.id === local) startElfScare(ev.elf);
-      if (isHost()) { G.grabUntil[ev.id] = G.time + 2.4; const p = aiPlayers().find((q) => q.id === ev.id); if (p) G.noises.push({ x: p.x, z: p.z, r: 32 }); }
+      if (isHost()) { G.grabUntil[ev.id] = G.time + 1.3; const p = aiPlayers().find((q) => q.id === ev.id); if (p) G.noises.push({ x: p.x, z: p.z, r: 32 }); }
       break;
     }
     case 'shot': {
@@ -845,9 +845,9 @@ function startSantaScare() {
   audio.jumpscare();
 }
 function startElfScare(i) {
-  G.scare = { type: 'elf', t: 0, dur: 2.3, elf: i };
+  G.scare = { type: 'elf', t: 0, dur: 1.2, elf: i };
   world.elves.scare = { index: i, camera };
-  player.frozen = 2.3;
+  player.frozen = 1.2;
   player.trauma = 1;
   audio.grabScare();
 }

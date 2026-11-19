@@ -72,12 +72,13 @@ export class Santa {
         const toe = limb(0.09 + (k === 0 ? 0.03 : 0), 0.012, 0.009, skin, 5);
         toe.rotation.x = -Math.PI / 2; toe.position.set((k - 1.5) * 0.019, -0.04, 0.19); ankle.add(toe);
       }
+      hips.add(hip);
       return { hip, knee, ankle };
     });
     // massive, hunched upper body in the bishop's robe
     const torso = P.torso = new THREE.Group();
     hips.add(torso);
-    const prof = [[0.12, 1.17], [0.3, 1.12], [0.52, 1.03], [0.6, 0.86], [0.58, 0.56], [0.5, 0.26], [0.43, 0.03], [0.47, -0.18], [0.52, -0.36], [0.55, -0.44]].map(([r, y]) => new THREE.Vector2(r, y));
+    const prof = [[0.11, 1.17], [0.27, 1.12], [0.45, 1.04], [0.5, 0.86], [0.46, 0.56], [0.39, 0.26], [0.34, 0.03], [0.39, -0.18], [0.44, -0.36], [0.47, -0.44]].map(([r, y]) => new THREE.Vector2(r, y));
     const lg = new THREE.LatheGeometry(prof, 24);
     const lp = lg.attributes.position;
     for (let i = 0; i < lp.count; i++) {
@@ -89,11 +90,11 @@ export class Santa {
     }
     lg.computeVertexNormals();
     const robeMesh = new THREE.Mesh(lg, capeM); robeMesh.castShadow = true; torso.add(robeMesh);
-    const inner = ball(0.42, black, 1.15, 1.4, 0.8); inner.position.y = 0.55; torso.add(inner);
-    const hump = ball(0.3, robe, 1.3, 0.9, 0.8); hump.position.set(0.05, 0.92, -0.27); torso.add(hump);
-    const lace = new THREE.Mesh(new THREE.CylinderGeometry(0.54, 0.58, 0.14, 24, 1, true), alb); lace.scale.z = 0.8; lace.position.y = -0.5; torso.add(lace);
-    const trim = new THREE.Mesh(new THREE.TorusGeometry(0.53, 0.025, 5, 24), gold); trim.rotation.x = Math.PI / 2; trim.scale.set(1, 0.8, 1); trim.position.y = -0.4; torso.add(trim);
-    for (const sx of [-1, 1]) { const st = new THREE.Mesh(new THREE.BoxGeometry(0.11, 1.35, 0.025), gold); st.position.set(sx * 0.15, 0.45, 0.47); st.rotation.x = -0.06; torso.add(st); }
+    const inner = ball(0.34, black, 1.15, 1.4, 0.8); inner.position.y = 0.55; torso.add(inner);
+    const hump = ball(0.24, robe, 1.3, 0.9, 0.8); hump.position.set(0.05, 0.92, -0.22); torso.add(hump);
+    const lace = new THREE.Mesh(new THREE.CylinderGeometry(0.46, 0.5, 0.14, 24, 1, true), alb); lace.scale.z = 0.8; lace.position.y = -0.5; torso.add(lace);
+    const trim = new THREE.Mesh(new THREE.TorusGeometry(0.44, 0.025, 5, 24), gold); trim.rotation.x = Math.PI / 2; trim.scale.set(1, 0.8, 1); trim.position.y = -0.4; torso.add(trim);
+    for (const sx of [-1, 1]) { const st = new THREE.Mesh(new THREE.BoxGeometry(0.11, 1.35, 0.025), gold); st.position.set(sx * 0.13, 0.45, 0.39); st.rotation.x = -0.06; torso.add(st); }
     const collar = new THREE.Mesh(new THREE.TorusGeometry(0.15, 0.05, 6, 16), alb); collar.rotation.x = Math.PI / 2; collar.position.set(0, 1.13, 0.05); torso.add(collar);
     P.cape = [];
     for (let i = 0; i < 6; i++) {
@@ -102,12 +103,12 @@ export class Santa {
       for (let k = 0; k < p.count; k++) if (p.getY(k) < -0.5) p.setY(k, p.getY(k) + Math.sin(i * 7 + p.getX(k) * 20) * 0.14);
       g.translate(0, -0.72, 0);
       const m = new THREE.Mesh(g, capeM); m.castShadow = true;
-      const pivot = new THREE.Group(); pivot.position.set(-0.45 + i * 0.18, 1.02, -0.38); pivot.rotation.y = (i - 2.5) * 0.12; pivot.add(m);
+      const pivot = new THREE.Group(); pivot.position.set(-0.38 + i * 0.15, 1.02, -0.32); pivot.rotation.y = (i - 2.5) * 0.12; pivot.add(m);
       torso.add(pivot); P.cape.push(pivot);
     }
     // arms: human, with hands whose fingers are just a little too long
     P.arms = [-1, 1].map((side) => {
-      const sh = new THREE.Group(); sh.position.set(side * 0.5, 0.98, 0.04); torso.add(sh);
+      const sh = new THREE.Group(); sh.position.set(side * 0.44, 0.98, 0.04); torso.add(sh);
       const slv = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.2, 0.66, 12, 1, true), capeM);
       slv.geometry.translate(0, -0.33, 0); slv.castShadow = true; sh.add(slv);
       sh.add(limb(0.56, 0.05, 0.04, skin));
@@ -212,17 +213,17 @@ export class Santa {
   // ------------------------------------------------------------------ net
   netState() {
     const s = this.s, r2 = (v) => Math.round(v * 100) / 100;
-    return [r2(s.x), r2(s.z), r2(s.yaw), r2(s.headYaw), r2(s.headPitch), SANTA_MODES.indexOf(s.mode), r2(s.speed), s.hp];
+    return [r2(s.x), r2(s.z), r2(s.yaw), r2(s.headYaw), r2(s.headPitch), SANTA_MODES.indexOf(s.mode), r2(s.speed), s.hp, ['walk', 'run', 'sprint', 'crawl', 'stalk'].indexOf(s.style || 'walk')];
   }
   applyNet(a) {
     const s = this.s;
     [s.x, s.z, s.yaw, s.headYaw, s.headPitch] = a;
     s.mode = SANTA_MODES[a[5]] || 'wander';
-    s.speed = a[6]; s.hp = a[7];
+    s.speed = a[6]; s.hp = a[7]; s.style = ['walk', 'run', 'sprint', 'crawl', 'stalk'][a[8]] || 'walk';
   }
 
   // ------------------------------------------------------------------ AI (host only)
-  setMode(m) { this.s.mode = m; this.ai.modeT = 0; this.ai.path = null; }
+  setMode(m) { this.s.mode = m; this.ai.modeT = 0; this.ai.path = null; if (m !== 'chase') this.s.style = 'walk'; else this.ai.styleT = 0; }
   setPath(tx, tz) {
     const [cx, cy] = this.castle.cellAt(this.s.x, this.s.z);
     this.ai.path = this.castle.path(cx, cy, tx, tz);
@@ -327,10 +328,19 @@ export class Santa {
         if (!target) { this.startSearch(3); break; }
         const dx = target.x - s.x, dz = target.z - s.z, d = Math.hypot(dx, dz);
         const los = target._los ?? C.lineOfSight(s.x, s.z, target.x, target.z);
-        let speed = 4.0 + ai.rage * 0.3;
+        // He never chases the same way twice: running, sprinting, crawling, slow staring stalks
+        ai.styleT = (ai.styleT ?? 0) - dt;
+        if (ai.styleT <= 0) {
+          const r = Math.random();
+          ai.style = r < 0.35 ? 'run' : r < 0.55 ? 'sprint' : r < 0.78 ? 'crawl' : 'stalk';
+          ai.styleT = ai.style === 'sprint' ? R(1.4, 2.4) : ai.style === 'stalk' ? R(1.8, 3.2) : R(2.5, 4.5);
+        }
+        s.style = ai.style;
+        let speed = { run: 4.0, sprint: 5.5, crawl: 3.4, stalk: 1.2 }[ai.style] + ai.rage * 0.3;
+        const canLunge = ai.style === 'run' || ai.style === 'sprint' || ai.style === 'crawl';
         if (ai.lungeT > 0) { ai.lungeT -= dt; speed = 6.4; if (ai.lungeT <= 0) ai.lungeCd = 2.0; }
-        else if (ai.lungeCd > 1.3) speed = 2.6;
-        else if (d < 2.8 && los && ai.lungeCd <= 0) ai.lungeT = 0.32;
+        else if (ai.lungeCd > 1.3) speed = Math.min(speed, 2.6);
+        else if (d < 2.8 && los && ai.lungeCd <= 0 && canLunge) ai.lungeT = 0.32;
         if (los) {
           ai.lastSeen = [target.x, target.z]; ai.lostT = 0; ai.path = null;
           this.moveToward(target.x, target.z, speed, dt);
@@ -536,7 +546,7 @@ export class Santa {
     v.headPitch = damp(v.headPitch, s.headPitch, 10, dt);
     const chase = mode === 'chase';
     const dead = mode === 'dead';
-    v.reach = damp(v.reach, chase ? 1 : mode === 'notice' ? 0.5 : mode === 'feed' ? 0.7 : 0, 6, dt);
+    v.reach = damp(v.reach, chase ? (s.style === 'stalk' ? 1 : s.style === 'crawl' ? 0 : 0.6) : mode === 'notice' ? 0.5 : mode === 'feed' ? 0.7 : 0, 6, dt);
     // duck under door lintels
     const [cx, cy] = C.cellAt(v.x, v.z);
     let dd = 9;
@@ -550,15 +560,19 @@ export class Santa {
     // eyes always find you
     if (camPos) P.face.look(camPos, 0.62);
     // stop-motion: when stalking, the pose updates in jerky 11fps steps
-    const stepped = !chase && !this.scare && mode !== 'stunned' && mode !== 'watch';
+    const style = chase ? s.style || 'run' : 'walk';
+    const stepped = !chase && !this.scare && mode !== 'stunned' && mode !== 'watch' && s.speed < 0.3;
     v.accum = (v.accum || 0) + dt;
     if (stepped && v.accum < 1 / 11) { this.place(); return; }
     const pdt = stepped ? v.accum : dt;
     v.accum = 0;
     const speed = dead ? 0 : s.speed;
-    const amp = speed > 0.05 ? 0.6 + 0.45 * Math.min(1, speed / 4.5) : 0;
+    const running = speed > 3 && style !== 'crawl';
+    const crawling = style === 'crawl';
+    const amp = speed > 0.05 ? (running ? 1.0 + 0.3 * Math.min(1, (speed - 3) / 2.5) : 0.6 + 0.45 * Math.min(1, speed / 4.5)) : 0;
     v.amp = damp(v.amp || 0, amp, 6, pdt);
-    if (speed > 0.05) v.phase += (speed * pdt * Math.PI) / (1.15 * Math.max(0.5, v.amp));
+    v.crawl = damp(v.crawl || 0, crawling ? 1 : 0, 5, pdt);
+    if (speed > 0.05) v.phase += (speed * pdt * Math.PI) / ((running ? 1.6 : crawling ? 0.9 : 1.15) * Math.max(0.5, v.amp));
     // twitches
     this.nextTwitch -= pdt;
     if (this.nextTwitch <= 0 && !dead) {
@@ -581,8 +595,9 @@ export class Santa {
     P.legs.forEach((leg, i) => {
       const ph = v.phase + i * Math.PI;
       const sw = Math.sin(ph) * v.amp, lift = Math.max(0, Math.cos(ph)) * v.amp;
-      const a1 = -0.04 - duck * 0.75 + sw * 0.42;
-      const a2 = 0.1 + duck * 1.35 + lift * 1.0;
+      const run = running ? 1 : 0, cr = v.crawl;
+      const a1 = lerp(-0.04 - duck * 0.75 + sw * (0.42 + run * 0.25) - run * 0.1, -1.25 + sw * 0.4, cr);
+      const a2 = lerp(0.1 + duck * 1.35 + lift * (1.0 + run * 0.7), 2.0 - lift * 0.4, cr);
       leg.hip.rotation.set(a1, 0, (i ? -1 : 1) * (0.03 + duck * 0.07));
       leg.knee.rotation.x = a2;
       leg.ankle.rotation.x = -(a1 + a2) + lift * 0.3;
@@ -592,9 +607,9 @@ export class Santa {
       if (planted && !v.lastPlant[i] && v.amp > 0.3 && this.onStep) this.onStep(v.x, v.z, chase ? 1.2 : 0.8);
       v.lastPlant[i] = planted;
     });
-    P.hips.position.y = maxDrop - (dead ? Math.max(0, v.death - 0.9) * 1.1 : 0);
+    P.hips.position.y = maxDrop + (running ? Math.abs(Math.cos(v.phase)) * 0.08 : 0) - (dead ? Math.max(0, v.death - 0.9) * 1.1 : 0);
     // torso
-    const lean = 0.3 + duck * 0.45 + v.reach * 0.35 + (dead ? v.death * 0.55 : 0);
+    const lean = lerp(0.3 + duck * 0.45 + v.reach * 0.35 + (running ? 0.25 : 0) + (dead ? v.death * 0.55 : 0), 1.4, v.crawl);
     P.torso.rotation.set(lean, Math.sin(v.phase) * 0.1 * v.amp, Math.sin(v.phase) * 0.05 * v.amp + (dead ? v.death * 0.35 : 0));
     P.body.position.set(shudder * R(-0.03, 0.03), 0, shudder * R(-0.03, 0.03));
     // arms
@@ -604,7 +619,9 @@ export class Santa {
       const reachA = -lean - 1.4 + Math.sin(t * 9 + i) * 0.1;
       const feedA = -lean - 0.8;
       let ax = lerp(hang, mode === 'feed' ? feedA : reachA, v.reach);
+      if (running) ax = lerp(-lean + opp * 1.1 - 0.2, reachA, 0.25);
       if (mode === 'stunned') ax = -lean - 2.6 + Math.sin(t * 20 + i) * 0.3;
+      ax = lerp(ax, -lean - 0.25 + opp * 0.6, v.crawl); // crawling: long arms pulling along the floor
       arm.sh.rotation.set(ax, 0, (i ? -1 : 1) * (0.1 + v.reach * 0.2));
       arm.elbow.rotation.x = -0.12 - v.reach * 0.3 - (i === 1 && v.reach < 0.5 ? 0.35 : 0);
       arm.wrist.rotation.x = -0.15 + v.reach * 0.25;

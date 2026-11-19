@@ -265,7 +265,7 @@ export class Elves {
       if (s.mode === 'grab') {
         const p = W.players.find((q) => q.id === ai.victim);
         if (p) { s.x = p.x + Math.sin(p.camYaw + Math.PI) * 0.5; s.z = p.z + Math.cos(p.camYaw + Math.PI) * 0.5; }
-        if (ai.t > 2.4) { s.mode = 'gone'; ai.respawn = R(22, 35); this.onPoof?.(e); }
+        if (ai.t > 1.3) { s.mode = 'gone'; ai.respawn = R(22, 35); this.onPoof?.(e); }
         continue;
       }
       // nearest living player
