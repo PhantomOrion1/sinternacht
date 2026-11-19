@@ -857,6 +857,7 @@ function updateScare(dt, t) {
   if (!sc) {
     scareLight.intensity = 0;
     U.scare.value = damp(U.scare.value, 0, 6, dt);
+    U.blur.value = damp(U.blur.value, 0, 8, dt);
     if (!G.escaping) U.red.value = damp(U.red.value, 0, 3, dt);
     U.invert.value = 0;
     face.style.opacity = 0;
@@ -869,14 +870,16 @@ function updateScare(dt, t) {
   {
     const f = camera.getWorldDirection(new THREE.Vector3());
     scareLight.position.copy(camera.position).addScaledVector(f, 0.25).add(new THREE.Vector3(0, -0.32, 0));
-    scareLight.intensity = (sc.type === 'santa' ? 0.55 : 0.6) * (Math.random() < 0.12 ? 0.15 : 1);
+    scareLight.intensity = (sc.type === 'santa' ? 0.4 : 0.6) * (Math.random() < 0.12 ? 0.15 : 1);
+    scareLight.color.setHex(sc.type === 'santa' ? 0xffc890 : 0xfff4e8);
     if (k > sc.dur - dt * 1.5) scareLight.intensity = 0;
   }
   player.trauma = Math.max(player.trauma, sc.type === 'santa' ? 1 : 0.8);
   if (sc.type === 'santa') {
     world.santa.scare.t = k;
     U.scare.value = 1;
-    U.red.value = k < 0.08 ? 0.95 : 0.2 + Math.random() * 0.25;
+    U.red.value = k < 0.06 ? 0.9 : 0.06 + Math.random() * 0.08;
+    U.blur.value = 0.9 + Math.sin(k * 30) * 0.3;
     U.invert.value = (k > 0.42 && k < 0.47) || (k > 1.12 && k < 1.16) ? 1 : 0;
     const flash = (k > 0.3 && k < 0.36) || (k > 0.95 && k < 1.0) || (k > 1.55 && k < 1.61);
     face.style.opacity = flash ? 1 : 0;
@@ -887,7 +890,7 @@ function updateScare(dt, t) {
       G.scare = null;
       world.santa.scare = null;
       face.style.opacity = 0;
-      U.scare.value = 0; U.red.value = 0; U.invert.value = 0; U.blackout.value = 1;
+      U.scare.value = 0; U.red.value = 0; U.invert.value = 0; U.blackout.value = 1; U.blur.value = 0;
       audio.tinnitus();
       $('deadTitle').textContent = 'Meegenomen';
       const partnerAlive = G.remote && G.status[G.remote.id] === 'alive';

@@ -611,8 +611,30 @@ export class AudioEngine {
         const g = this.gain(0); this.env(g, t, 0.01, 0.35, 0.3, 1.4); s.connect(g); g.connect(chop);
       }
     }
+    // ring modulation: the scream turns metallic and wrong
+    const ring = this.gain(0), ringOsc = this.osc('sine', 137, t, 2); ringOsc.frequency.linearRampToValueAtTime(410, t + 1.8);
+    ringOsc.connect(ring.gain);
+    this.scream(t + 0.02, ring, { base: 700, dur: 1.7, vol: 1.5, rise: 2.2, voices: 6 });
+    const rg = this.gain(1.4); ring.connect(rg); rg.connect(o);
+    // stutter gate that changes speed — the audio itself sounds broken
+    const gate = this.gain(0), gl = this.osc('square', 12, t, 2), gg = this.gain(0.5);
+    gl.frequency.setValueAtTime(12, t); gl.frequency.setValueAtTime(31, t + 0.5); gl.frequency.setValueAtTime(7, t + 0.9); gl.frequency.setValueAtTime(48, t + 1.25); gl.frequency.setValueAtTime(19, t + 1.5);
+    gl.connect(gg); gg.connect(gate.gain);
+    this.scream(t + 0.05, gate, { base: 300, dur: 1.75, vol: 1.6, rise: 0.4, voices: 5 });
+    const gt = this.gain(1.2); gate.connect(gt); gt.connect(o);
+    // digital glitch bursts
+    for (let i = 0; i < 14; i++) {
+      const tt = t + R(0, 1.7), d = R(0.02, 0.07);
+      const sq = this.osc('square', R(80, 4000), tt, d), sqg = this.gain(0); this.env(sqg, tt, 0.001, 0.7, d);
+      sq.connect(sqg); sqg.connect(o);
+    }
+    // pitch-diving sirens
+    for (const f0 of [1800, 2400]) {
+      const sv = this.osc('sawtooth', f0, t, 1.9); sv.frequency.exponentialRampToValueAtTime(f0 * 0.18, t + 1.8);
+      const svg = this.gain(0); this.env(svg, t, 0.01, 0.4, 0.4, 1.3); sv.connect(svg); svg.connect(o);
+    }
     // second hit when He lunges again
-    const t2 = t + 1.08;
+    const t2 = t + 1.0;
     const n2 = this.noiseSrc(t2, 0.4), n2f = this.filt('lowpass', 4000), n2g = this.gain(0);
     this.env(n2g, t2, 0.001, 1.8, 0.35); n2.connect(n2f); n2f.connect(n2g); n2g.connect(o);
     const sub2 = this.osc('sine', 70, t2, 0.8); sub2.frequency.exponentialRampToValueAtTime(28, t2 + 0.6);

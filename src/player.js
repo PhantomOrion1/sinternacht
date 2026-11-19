@@ -72,11 +72,11 @@ export class Player {
     // stamina
     this.staminaCd -= dt;
     const trySprint = canMove && input.sprint && wantMove && !this.crouch && iz < 0.1 && !this.exhausted;
-    if (trySprint) { this.stamina = Math.max(0, this.stamina - dt * 17); this.staminaCd = 0.8; if (this.stamina <= 0) this.exhausted = true; }
+    if (trySprint) { this.stamina = Math.max(0, this.stamina - dt * 14); this.staminaCd = 0.8; if (this.stamina <= 0) this.exhausted = true; }
     else if (this.staminaCd <= 0) this.stamina = Math.min(100, this.stamina + dt * 15);
     if (this.exhausted && this.stamina > 35) this.exhausted = false;
     this.sprinting = trySprint;
-    const speed = this.crouch ? 1.45 : trySprint ? 5.3 : 2.95;
+    const speed = this.crouch ? 1.45 : trySprint ? 5.6 : 3.0;
     const s = Math.sin(this.yaw), c = Math.cos(this.yaw);
     const tx = (ix * c + iz * s) * speed, tz = (-ix * s + iz * c) * speed;
     const acc = wantMove ? 10 : 12;

@@ -49,10 +49,11 @@ export const FinalShader = {
     white: { value: 0 },
     invert: { value: 0 },
     ca: { value: 0.004 },
+    blur: { value: 0 },
   },
   vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
   fragmentShader: `
-    uniform sampler2D tDiffuse; uniform float time, scare, grain, vig, red, blackout, white, invert, ca;
+    uniform sampler2D tDiffuse; uniform float time, scare, grain, vig, red, blackout, white, invert, ca, blur;
     varying vec2 vUv;
     float hash(vec2 p){ return fract(sin(dot(p, vec2(12.9898,78.233))) * 43758.5453); }
     void main(){
@@ -65,6 +66,12 @@ export const FinalShader = {
       vec3 col;
       col.r = texture2D(tDiffuse, uv + c * off).r;
       col.g = texture2D(tDiffuse, uv).g;
+      if (blur > 0.01) {
+        // zoom/motion blur: everything smeared toward you
+        vec3 acc = col;
+        for (int i = 1; i < 10; i++) { float f = float(i) / 10.0 * 0.06 * blur; acc += texture2D(tDiffuse, uv - c * f).rgb; }
+        col = acc / 10.0;
+      }
       col.b = texture2D(tDiffuse, uv - c * off).b;
       float l = dot(col, vec3(0.299, 0.587, 0.114));
       col = mix(vec3(l), col, 0.72);

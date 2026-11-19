@@ -333,14 +333,14 @@ export class Santa {
         if (ai.styleT <= 0) {
           const r = Math.random();
           ai.style = r < 0.35 ? 'run' : r < 0.55 ? 'sprint' : r < 0.78 ? 'crawl' : 'stalk';
-          ai.styleT = ai.style === 'sprint' ? R(1.4, 2.4) : ai.style === 'stalk' ? R(1.8, 3.2) : R(2.5, 4.5);
+          ai.styleT = ai.style === 'sprint' ? R(1.0, 1.6) : ai.style === 'stalk' ? R(1.8, 3.2) : R(2.5, 4.5);
         }
         s.style = ai.style;
-        let speed = { run: 4.0, sprint: 5.5, crawl: 3.4, stalk: 1.2 }[ai.style] + ai.rage * 0.3;
+        let speed = { run: 3.6, sprint: 4.9, crawl: 3.0, stalk: 1.1 }[ai.style] + ai.rage * 0.25;
         const canLunge = ai.style === 'run' || ai.style === 'sprint' || ai.style === 'crawl';
-        if (ai.lungeT > 0) { ai.lungeT -= dt; speed = 6.4; if (ai.lungeT <= 0) ai.lungeCd = 2.0; }
+        if (ai.lungeT > 0) { ai.lungeT -= dt; speed = 5.6; if (ai.lungeT <= 0) ai.lungeCd = 2.4; }
         else if (ai.lungeCd > 1.3) speed = Math.min(speed, 2.6);
-        else if (d < 2.8 && los && ai.lungeCd <= 0 && canLunge) ai.lungeT = 0.32;
+        else if (d < 2.3 && los && ai.lungeCd <= 0 && canLunge) ai.lungeT = 0.28;
         if (los) {
           ai.lastSeen = [target.x, target.z]; ai.lostT = 0; ai.path = null;
           this.moveToward(target.x, target.z, speed, dt);
@@ -348,9 +348,9 @@ export class Santa {
           ai.lostT += dt;
           ai.repathT -= dt;
           if (!ai.path || ai.repathT <= 0) { this.setPath(ai.lastSeen[0], ai.lastSeen[1]); ai.repathT = 0.8; }
-          if (this.followPath(speed * 0.9, dt) || ai.lostT > 5) { ai.huntAfter = target.id; this.startSearch(R(2.5, 4)); ai.relief = 0; }
+          if (this.followPath(speed * 0.9, dt) || ai.lostT > 4) { ai.huntAfter = target.id; this.startSearch(R(2.5, 4)); ai.relief = 0; }
         }
-        if (d < 1.1 && !target.safe) {
+        if (d < 0.95 && !target.safe) {
           W.emit({ k: 'caught', id: target.id });
           this.setMode('feed');
           ai.feedYaw = Math.atan2(dx, dz);
@@ -644,7 +644,7 @@ export class Santa {
     let jaw = 0.02 + Math.sin(t * 2.7) * 0.015 + v.reach * 0.25 + (mode === 'notice' ? 0.55 : 0) + (mode === 'feed' ? 0.3 + Math.sin(t * 16) * 0.25 : 0) + (mode === 'stunned' ? 0.8 : 0) + (dead ? 0.6 * Math.min(1, v.death) : 0);
     if (chase) jaw += Math.sin(t * 19) * 0.06;
     if (this.scare) {
-      jaw = 1 + Math.sin(t * 40) * 0.06;
+      jaw = 0.72 + Math.sin(t * 40) * 0.05;
       hy = 0; hp = 0; hz = R(-0.25, 0.25);
       v.reach = 1;
     }
@@ -664,7 +664,17 @@ export class Santa {
     this.glowMat.opacity = glow * (0.85 + Math.random() * 0.15);
     this.glowMat.color.setHex(chase ? 0xff6040 : 0xffe0b0);
     P.glows.forEach((g) => g.scale.setScalar(chase ? 0.42 : mode === 'watch' ? 0.45 : 0.3));
-    if (this.scare) { if (camPos) P.face.look(camPos, 0.62); this.placeForScare(t); }
+    if (this.scare) {
+      // arms flung forward and wide, fingers splayed, reaching for the lens
+      P.arms.forEach((arm, i) => {
+        arm.sh.rotation.set(-lean - 1.35 + Math.sin(t * 23 + i) * 0.05, (i ? 0.25 : -0.25), (i ? -1 : 1) * 1.05);
+        arm.elbow.rotation.x = -0.25; arm.wrist.rotation.set(-0.6, 0, 0);
+        arm.fingers.forEach((f, k) => { f.fr.rotation.set(0.05, 0, (k - 1.5) * 0.25); f.j.rotation.x = 0.1; });
+      });
+      P.staff.visible = false;
+      if (camPos) P.face.look(camPos, 0.62);
+      this.placeForScare(t);
+    }
   }
   place() {
     this.root.position.set(this.v.x, 0, this.v.z);
@@ -681,7 +691,8 @@ export class Santa {
     const head = this.headWorld(new THREE.Vector3());
     const st = this.scare.t;
     const k = Math.min(1, st / 0.1);
-    const dist = lerp(1.4, 0.36, k) - (st > 1.05 && st < 1.25 ? 0.1 : 0) + Math.sin(st * 31) * 0.015;
+    // lunge in to arm's length, hang there shaking, then a second lunge right into your face
+    const dist = lerp(1.6, 0.62, k) - (st > 1.0 ? Math.min(1, (st - 1.0) / 0.12) * 0.3 : 0) + Math.sin(st * 31) * 0.02;
     const want = cam.position.clone().addScaledVector(fwd, dist).add(new THREE.Vector3(R(-0.015, 0.015), 0.02 + R(-0.015, 0.015), 0));
     this.root.position.add(want.sub(head));
     this.root.updateMatrixWorld(true);
