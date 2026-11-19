@@ -1,0 +1,115 @@
+:root {
+  --bone: #d9cfbf;
+  --dim: #8a8174;
+  --blood: #9b1010;
+  --blood-hi: #d42a1a;
+  --gold: #c8a050;
+  --ink: #000;
+  --serif: 'IM Fell English', Georgia, 'Times New Roman', serif;
+  --caps: 'IM Fell English SC', Georgia, serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--ink); color: var(--bone); font-family: var(--serif); overflow: hidden; }
+#game { position: fixed; inset: 0; }
+#game canvas { display: block; width: 100%; height: 100%; }
+[hidden] { display: none !important; }
+button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+input, select { font: inherit; color: var(--bone); background: rgba(0,0,0,0.6); border: 1px solid #3a3530; padding: 6px 10px; }
+
+/* screens */
+.screen {
+  position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  text-align: center; padding: 24px 16px; z-index: 20;
+  background: radial-gradient(ellipse at center, rgba(0,0,0,0.25) 0%, rgba(0,0,0,0.85) 70%, #000 100%);
+}
+#splash { background: #000; }
+.title {
+  font-family: var(--caps); font-weight: 400; letter-spacing: 0.22em; font-size: clamp(44px, 9vw, 112px);
+  margin: 0 0 8px; color: var(--bone); text-shadow: 0 0 24px rgba(155,16,16,0.55), 0 0 2px #000;
+  animation: flick 7s infinite;
+}
+.title::first-letter { color: var(--blood-hi); }
+@keyframes flick {
+  0%, 18%, 22%, 62%, 64%, 100% { opacity: 1; }
+  20% { opacity: 0.35; } 63% { opacity: 0.6; }
+}
+.tag { font-style: italic; color: var(--dim); margin: 0 0 36px; font-size: 20px; }
+.warn { max-width: 560px; color: #b8a890; font-size: 18px; line-height: 1.5; margin: 18px 0 30px; }
+.tiny { color: #5a544c; font-size: 13px; margin-top: 18px; }
+.small { color: var(--dim); margin: 0; font-size: 16px; letter-spacing: 0.1em; }
+nav { display: flex; flex-direction: column; gap: 6px; align-items: center; }
+nav > button, .big, .back, .ghost {
+  font-family: var(--caps); font-size: 26px; letter-spacing: 0.08em; padding: 6px 20px; color: var(--bone);
+  transition: color .15s, text-shadow .15s, transform .15s;
+}
+nav > button:hover, .big:hover:not(:disabled), .back:hover, .ghost:hover { color: #fff; text-shadow: 0 0 14px var(--blood-hi); transform: translateX(3px); }
+.big { font-size: 30px; border-bottom: 1px solid rgba(155,16,16,0.6); }
+.big:disabled { opacity: 0.35; cursor: default; }
+.ghost { font-size: 20px; color: var(--dim); }
+#joinbox { display: flex; gap: 8px; margin: 4px 0 10px; }
+#code { width: 120px; text-align: center; letter-spacing: 0.3em; text-transform: uppercase; font-size: 22px; }
+#joinGo { font-family: var(--caps); font-size: 22px; padding: 0 12px; border-bottom: 1px solid var(--blood); }
+.name { margin-top: 34px; color: var(--dim); font-size: 16px; display: flex; gap: 10px; align-items: center; }
+.name input { width: 170px; }
+#menuMsg { min-height: 24px; color: var(--blood-hi); margin-top: 14px; }
+.panel { background: rgba(0,0,0,0.88); }
+.panel h2, #paused h2 { font-family: var(--caps); font-weight: 400; font-size: 40px; margin: 0 0 18px; letter-spacing: 0.1em; }
+.panel p { max-width: 560px; line-height: 1.5; margin: 6px 0; color: #c8bfb0; }
+.panel b { color: #fff; font-weight: 400; text-decoration: underline; text-decoration-color: var(--blood); }
+.panel label { display: flex; justify-content: space-between; align-items: center; gap: 20px; width: min(420px, 100%); margin: 8px 0; color: #c8bfb0; }
+.panel label.check { justify-content: flex-start; }
+input[type=range] { accent-color: var(--blood); width: 200px; padding: 0; }
+.keys { margin: 16px 0; border-collapse: collapse; }
+.keys td { padding: 3px 14px; text-align: left; color: #c8bfb0; }
+.keys td:first-child { font-family: var(--caps); color: var(--gold); text-align: right; }
+#roomCode { font-family: var(--caps); font-size: clamp(64px, 14vw, 120px); letter-spacing: 0.25em; color: #fff; text-shadow: 0 0 30px rgba(212,42,26,0.5); margin: 4px 0 6px; user-select: all; }
+#lobbyStatus { color: #c8bfb0; min-height: 26px; margin-bottom: 26px; font-size: 19px; }
+#dead { background: rgba(0,0,0,0.92); pointer-events: none; }
+#deadTitle, #endTitle { font-family: var(--caps); font-weight: 400; font-size: clamp(54px, 11vw, 120px); letter-spacing: 0.2em; margin: 0; color: var(--blood-hi); text-shadow: 0 0 40px rgba(155,16,16,0.8); }
+#deadText, #endText { font-style: italic; color: #c8bfb0; font-size: 20px; max-width: 620px; line-height: 1.5; }
+#endStats { color: var(--dim); margin: 10px 0 28px; line-height: 1.7; }
+#end { background: rgba(0,0,0,0.9); }
+#end.win #endTitle { color: var(--bone); text-shadow: 0 0 40px rgba(255,230,180,0.4); }
+
+/* hud */
+#hud { position: fixed; inset: 0; pointer-events: none; z-index: 10; font-family: var(--serif); }
+#objective { position: absolute; top: 18px; left: 22px; text-shadow: 0 0 4px #000, 0 0 2px #000; }
+.obj-title { font-family: var(--caps); font-size: 18px; color: var(--gold); letter-spacing: 0.08em; opacity: 0.85; }
+#parts { margin: 4px 0; }
+.part { font-size: 15px; color: #6d665c; display: flex; align-items: center; gap: 8px; line-height: 1.5; }
+.part .pip { width: 8px; height: 8px; border: 1px solid #6d665c; transform: rotate(45deg); }
+.part.got { color: var(--bone); }
+.part.got .pip { background: var(--gold); border-color: var(--gold); box-shadow: 0 0 6px var(--gold); }
+.obj-alt { font-style: italic; color: #8a8174; font-size: 15px; }
+#partner { position: absolute; top: 18px; right: 22px; text-align: right; font-size: 15px; color: #a89f92; text-shadow: 0 0 4px #000; }
+#partner b { font-family: var(--caps); font-weight: 400; color: var(--bone); }
+#partner .taken { color: var(--blood-hi); }
+#cross { position: absolute; left: 50%; top: 50%; width: 3px; height: 3px; margin: -1.5px 0 0 -1.5px; border-radius: 50%; background: rgba(230,220,200,0.55); }
+#prompt { position: absolute; left: 50%; top: 58%; transform: translateX(-50%); font-size: 20px; text-shadow: 0 0 6px #000, 0 0 2px #000; white-space: nowrap; }
+#prompt kbd { font-family: var(--caps); color: var(--gold); border: 1px solid rgba(200,160,80,0.5); padding: 0 6px; margin-right: 6px; font-size: 16px; }
+#holdring { position: absolute; left: 50%; top: 50%; width: 46px; height: 46px; margin: -23px 0 0 -23px; transform: rotate(-90deg); }
+#holdring circle { fill: none; stroke: var(--gold); stroke-width: 2.5; stroke-dasharray: 100.5; stroke-dashoffset: 100.5; }
+#msg { position: absolute; left: 50%; top: 68%; transform: translateX(-50%); font-style: italic; font-size: 22px; color: var(--bone); text-shadow: 0 0 8px #000, 0 0 2px #000; opacity: 0; transition: opacity 0.6s; text-align: center; width: min(92vw, 760px); }
+#msg.on { opacity: 1; }
+#bars { position: absolute; left: 22px; bottom: 20px; display: flex; flex-direction: column; gap: 6px; }
+.meter { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #8a8174; transition: opacity .5s; }
+.meter span { width: 46px; text-align: right; font-family: var(--caps); }
+.bar { width: 120px; height: 3px; background: rgba(255,255,255,0.1); }
+.bar i { display: block; height: 100%; width: 100%; background: #b8ae9c; transition: width .15s; }
+#batt.low .bar i { background: var(--blood-hi); }
+#stam.full { opacity: 0; }
+#ammo { position: absolute; right: 24px; bottom: 20px; font-family: var(--caps); font-size: 20px; color: var(--bone); text-shadow: 0 0 6px #000; }
+#spectate { position: absolute; left: 50%; top: 16px; transform: translateX(-50%); font-family: var(--caps); color: var(--dim); font-size: 18px; letter-spacing: 0.08em; }
+
+/* overlays */
+#scareface { position: fixed; left: 50%; top: 50%; width: min(120vh, 120vw); height: min(120vh, 120vw); transform: translate(-50%, -50%); z-index: 30; opacity: 0; pointer-events: none; mix-blend-mode: screen; filter: contrast(1.6); }
+#fade { position: fixed; inset: 0; background: #fff; opacity: 0; pointer-events: none; z-index: 15; }
+#intro { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; z-index: 16; pointer-events: none; }
+#intro p { font-style: italic; font-size: clamp(20px, 3vw, 30px); color: var(--bone); text-shadow: 0 0 10px #000; opacity: 0; transition: opacity 1.2s; max-width: 760px; text-align: center; padding: 0 16px; }
+#intro p.on { opacity: 1; }
+
+@media (max-width: 600px) {
+  #objective { left: 12px; top: 10px; transform: scale(0.85); transform-origin: top left; }
+  #partner { right: 12px; top: 10px; }
+}

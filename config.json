@@ -1,0 +1,4 @@
+{
+  "_readme": "Optional relay for players whose networks block direct connections. Leave iceServers empty to use free STUN only, or add TURN logins, e.g. [{\"urls\": \"turn:example.com:3478\", \"username\": \"...\", \"credential\": \"...\"}].",
+  "iceServers": []
+}
