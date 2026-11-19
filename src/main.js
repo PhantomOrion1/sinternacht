@@ -334,7 +334,7 @@ function updateMenu(dt, t) {
   audio.setListener(camera.position, camera.getWorldDirection(new THREE.Vector3()));
   if (audio.ready) {
     audio.startAmbience();
-    audio.updateSantaVoice({ x: S.s.x, z: S.s.z }, 0, 'wander', false);
+    audio.updateSantaVoice({ x: S.s.x, z: S.s.z }, 0, 'wander', true);
     audio.setMood(0.15, 0, 0, 0.25);
     audio.tick();
   }
@@ -1195,7 +1195,7 @@ function updateGame(dt, t) {
   lastSantaOccl = G.santaLos ? 0 : clamp((ds - 2) / 8, 0.45, 1);
   const dead = S.s.mode === 'dead';
   audio.setListener(c, camera.getWorldDirection(v3));
-  audio.updateSantaVoice({ x: S.v.x, z: S.v.z }, lastSantaOccl, S.s.mode, dead || G.ended);
+  audio.updateSantaVoice({ x: S.v.x, z: S.v.z }, lastSantaOccl, S.s.mode, true); // no breathing or humming
   const lookDir = camera.getWorldDirection(new THREE.Vector3());
   const lookDot = ds > 0.01 ? (lookDir.x * (S.v.x - c.x) + lookDir.z * (S.v.z - c.z)) / (ds * Math.hypot(lookDir.x, lookDir.z) || 1) : 1;
   G.lookingAt = damp(G.lookingAt || 0, G.santaLos && lookDot > 0.82 ? 1 : 0, 4, dt);
