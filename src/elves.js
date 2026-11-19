@@ -471,10 +471,11 @@ export class Elves {
       m.pelvis.position.y = 0.42 + Math.abs(pull(0)) * 0.025;
       m.torso.rotation.set(1.12, pull(0) * 0.14, pull(Math.PI / 2) * 0.08);
       m.legs.forEach((l, i) => {
-        const sw = pull(i ? Math.PI : 0);
-        l.hip.rotation.set(-0.85 + sw * 0.35, 0, (i ? -1 : 1) * 0.85);
-        l.knee.rotation.x = 2.1 - Math.max(0, sw) * 0.5;
-        l.ankle.rotation.x = 0.3;
+        // back legs really work: knee swings forward and lifts, then the foot plants and shoves back
+        const sw = pull(i ? Math.PI : 0), fwd = Math.max(0, sw), back = Math.max(0, -sw);
+        l.hip.rotation.set(-0.8 - sw * 0.75, 0, (i ? -1 : 1) * (0.8 - fwd * 0.25));
+        l.knee.rotation.x = 1.75 + fwd * 0.75 - back * 0.35;
+        l.ankle.rotation.x = 0.2 + back * 0.7;
       });
       m.arms.forEach((a, i) => {
         const sw = pull(i ? 0 : Math.PI); // diagonal pair with the opposite leg
