@@ -70,6 +70,49 @@ const audio = new AudioEngine();
 audio.setVolume(settings.vol);
 audio.setScareVolume(settings.scareVol);
 let particles = null;
+// faint blood trails on the floor: red for you, blue for your friend
+const TRAIL_MAX = 900;
+let trails = null;
+function makeTrails() {
+  const g = new THREE.PlaneGeometry(1, 1); g.rotateX(-Math.PI / 2);
+  const m = new THREE.MeshBasicMaterial({ map: T.glow, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0.55 });
+  const mesh = new THREE.InstancedMesh(g, m, TRAIL_MAX);
+  mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  mesh.frustumCulled = false;
+  const zero = new THREE.Matrix4().makeScale(0, 0, 0);
+  for (let i = 0; i < TRAIL_MAX; i++) { mesh.setMatrixAt(i, zero); mesh.setColorAt(i, new THREE.Color(0, 0, 0)); }
+  scene.add(mesh);
+  trails = { mesh, next: 0, life: new Float32Array(TRAIL_MAX), base: [], last: {}, m4: new THREE.Matrix4(), col: new THREE.Color() };
+}
+function dropTrail(key, x, z, rgb) {
+  const L = trails.last[key];
+  if (L && Math.hypot(L[0] - x, L[1] - z) < 0.55) return;
+  trails.last[key] = [x, z];
+  const i = trails.next; trails.next = (i + 1) % TRAIL_MAX;
+  const s = R(0.12, 0.22);
+  trails.m4.makeRotationY(Math.random() * 6).scale(new THREE.Vector3(s, 1, s * R(0.7, 1.3))).setPosition(x + R(-0.12, 0.12), 0.012, z + R(-0.12, 0.12));
+  trails.mesh.setMatrixAt(i, trails.m4);
+  trails.life[i] = 1; trails.base[i] = rgb;
+  trails.mesh.instanceMatrix.needsUpdate = true;
+}
+function updateTrails(dt) {
+  if (!trails) makeTrails();
+  if (meAlive()) dropTrail('me', player.pos.x, player.pos.z, [0.55, 0.02, 0.02]);
+  if (G.remote && G.status[G.remote.id] === 'alive') dropTrail('friend', G.remote.v.x, G.remote.v.z, [0.03, 0.12, 0.6]);
+  let dirty = false;
+  for (let i = 0; i < TRAIL_MAX; i++) {
+    if (trails.life[i] <= 0) continue;
+    trails.life[i] = Math.max(0, trails.life[i] - dt / 90);
+    const b = trails.base[i], k = Math.min(1, trails.life[i] * 1.5);
+    trails.mesh.setColorAt(i, trails.col.setRGB(b[0] * k, b[1] * k, b[2] * k));
+    dirty = true;
+  }
+  if (dirty) trails.mesh.instanceColor.needsUpdate = true;
+}
+function clearTrails() {
+  if (!trails) return;
+  scene.remove(trails.mesh); trails.mesh.dispose(); trails = null;
+}
 let player = null;
 let world = null;
 let G = null; // the running game
@@ -315,6 +358,7 @@ function startGame({ seed, mode, localId, names }) {
   camera.add(G.bow);
   camera.fov = 72; camera.updateProjectionMatrix();
   // phantom for fake scares
+  clearTrails();
   G.phantom = world.elves.makePhantom();
   world.items.addDoor({ id: 1, fx: C.exitFace.x, fy: C.exitFace.y, side: C.exitFace.side, life: 1e9, born: Date.now() - 10000, permanent: true });
   G.vaultAlarm = 0; G.vaultIdle = 0;
@@ -1098,6 +1142,15 @@ function updateGame(dt, t) {
     if (lightning > 0.8) { lightning = -1; hemi.intensity = 0.07; }
   }
   // fake scares
+  G.bgT = (G.bgT ?? R(6, 12)) - dt;
+  if (G.bgT <= 0 && !G.ended) {
+    G.bgT = R(9, 22);
+    const c = camera.position, a = Math.random() * Math.PI * 2, r = R(6, 20);
+    const pos = { x: c.x + Math.cos(a) * r, y: R(0.5, 3.5), z: c.z + Math.sin(a) * r };
+    const k = Math.random();
+    if (k < 0.3) audio.creak(pos, 0.6); else if (k < 0.5) audio.chains(pos, 0.6); else if (k < 0.7) audio.knock(pos, 0.7); else if (k < 0.85) audio.drip(pos); else audio.whisper(pos, 0.6, 0.18, 6);
+  }
+  updateTrails(dt);
   G.fakeT -= dt;
   if (G.fakeT <= 0 && alive && !G.scare && G.time > 20) { G.fakeT = R(24, 50); fakeScare(); }
   G.bellT -= dt;

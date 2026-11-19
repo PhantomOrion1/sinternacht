@@ -178,26 +178,20 @@ export class AudioEngine {
     this.tension = tension; this.chase = chase; this.near = near; this.boxWarp = boxWarp;
     if (!this.ambOn) return;
     const t = this.ctx.currentTime;
-    this.droneF.frequency.setTargetAtTime(140 + tension * 380 + chase * 300, t, 0.6);
-    this.dissonance.gain.setTargetAtTime(tension * 0.7, t, 0.8);
-    this.strG.gain.setTargetAtTime(Math.max(0, tension - 0.25) * 0.05 + chase * 0.03, t, 0.5);
-    this.chaseG.gain.setTargetAtTime(chase * 0.9, t, chase > 0.5 ? 0.05 : 1.2);
+    // the music stays the same when He shows up — only the heartbeat reacts
+    this.strG.gain.setTargetAtTime(0, t, 0.5);
+    this.chaseG.gain.setTargetAtTime(0, t, 0.5);
   }
 
   // Called every frame: schedules music box, heartbeat, chase drums.
   tick() {
     if (!this.ready || !this.ambOn) return;
     const t = this.ctx.currentTime;
-    if (t > this.nextBox && this.chase < 0.2) this.playMusicBox(t + 0.05);
+    if (t > this.nextBox) this.playMusicBox(t + 0.05);
     if (this.near > 0.12 && t + 0.05 > this.nextHeart) {
       const bpm = 62 + this.near * 95;
       this.heartbeat(this.nextHeart < t ? t + 0.02 : this.nextHeart, this.near);
       this.nextHeart = Math.max(this.nextHeart, t) + 60 / bpm;
-    }
-    if (this.chase > 0.05) {
-      const step = 60 / 152 / 4;
-      if (this.nextBeat < t) this.nextBeat = t + 0.02;
-      while (this.nextBeat < t + 0.12) { this.chaseHit(this.nextBeat, this.chaseStep++); this.nextBeat += step; }
     }
   }
 
@@ -549,6 +543,44 @@ export class AudioEngine {
     for (const [dt, fr, d] of [[0, 1100, 0.35], [0.45, 700, 0.45]]) {
       const n = this.noiseSrc(t + dt, d + 0.1), f = this.filt('bandpass', fr, 1.2), g = this.gain(0);
       this.env(g, t + dt, d * 0.4, vol, d * 0.6); n.connect(f); f.connect(g); g.connect(o);
+    }
+  }
+  creak(pos, occl = 0.5) {
+    if (!this.ready) return;
+    const t = this.t, o = this.out(pos, occl, { life: 3, ref: 2, verb: 1 });
+    const s = this.osc('sawtooth', 90, t, 1.6), f = this.filt('bandpass', 700, 6), g = this.gain(0);
+    s.frequency.setValueAtTime(R(70, 110), t); s.frequency.linearRampToValueAtTime(R(130, 220), t + 1.2);
+    const am = this.osc('square', R(18, 30), t, 1.6), ag = this.gain(0.5); am.connect(ag); ag.connect(g.gain);
+    this.env(g, t, 0.15, 0.25, 0.6, 0.6); s.connect(f); f.connect(g); g.connect(o);
+  }
+  chains(pos, occl = 0.5) {
+    if (!this.ready) return;
+    const t0 = this.t, o = this.out(pos, occl, { life: 3, ref: 2, verb: 1.1 });
+    for (let i = 0; i < 9; i++) {
+      const t = t0 + i * R(0.05, 0.16);
+      for (const f of [R(2200, 3600), R(4200, 6000)]) {
+        const s = this.osc('sine', f, t, 0.25), g = this.gain(0); this.env(g, t, 0.001, 0.06, 0.2); s.connect(g); g.connect(o);
+      }
+    }
+  }
+  knock(pos, occl = 0.6) {
+    if (!this.ready) return;
+    const t0 = this.t, o = this.out(pos, occl, { life: 3, ref: 2, verb: 1.2 });
+    const n = Math.random() < 0.5 ? 3 : 2;
+    for (let i = 0; i < n; i++) {
+      const t = t0 + i * 0.32;
+      const s = this.osc('sine', 120, t, 0.2); s.frequency.exponentialRampToValueAtTime(60, t + 0.15);
+      const g = this.gain(0); this.env(g, t, 0.002, 0.7, 0.15); s.connect(g); g.connect(o);
+      const nn = this.noiseSrc(t, 0.05), nf = this.filt('lowpass', 900), ng = this.gain(0); this.env(ng, t, 0.001, 0.3, 0.04); nn.connect(nf); nf.connect(ng); ng.connect(o);
+    }
+  }
+  drip(pos) {
+    if (!this.ready) return;
+    const t0 = this.t, o = this.out(pos, 0.2, { life: 4, ref: 1.5, verb: 1.4 });
+    for (let i = 0; i < 4; i++) {
+      const t = t0 + i * R(0.6, 1.1);
+      const s = this.osc('sine', R(900, 1400), t, 0.12); s.frequency.exponentialRampToValueAtTime(R(1800, 2600), t + 0.06);
+      const g = this.gain(0); this.env(g, t, 0.002, 0.12, 0.08); s.connect(g); g.connect(o);
     }
   }
   sting() {
