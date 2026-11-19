@@ -142,7 +142,7 @@ export class Elves {
       feather: new THREE.MeshStandardMaterial({ color: 0x3aaa6a, roughness: 0.85, emissive: 0x06140c, side: THREE.DoubleSide }),
     };
     this.glowMat = new THREE.SpriteMaterial({ map: T.glow, color: 0xe8eeff, blending: THREE.AdditiveBlending, depthWrite: false, fog: false, opacity: 0.45 });
-    const types = rng.shuffle(['crawler', 'crawler', 'stander', 'stander', 'stander', 'stander', 'stander', 'stander', 'runner', 'runner', 'runner', 'runner']);
+    const types = rng.shuffle(['crawler', 'crawler', 'ceiling', 'ceiling', 'stander', 'stander', 'stander', 'stander', 'runner', 'runner', 'runner', 'runner']);
     this.list = castle.elfSpots.map((sp, i) => {
       const type = types[i % types.length];
       const model = buildElf(M, this.glowMat, rng);
@@ -275,7 +275,7 @@ export class Elves {
       if (ai.losT <= 0 && p) { ai.losT = 0.2; ai.los = d < 26 && C.lineOfSight(s.x, s.z, p.x, p.z); }
       const los = p && ai.los;
       // touching one = grabbed
-      if (p && d < TOUCH && !p.safe && !p.grabbed && s.mode !== 'flee') {
+      if (e.type !== 'ceiling' && p && d < TOUCH && !p.safe && !p.grabbed && s.mode !== 'flee') {
         W.emit({ k: 'grab', id: p.id, elf: e.i });
         s.mode = 'grab'; ai.t = 0; ai.victim = p.id; p.grabbed = true;
         continue;
@@ -303,6 +303,17 @@ export class Elves {
           const sp = (ai.burst > 0 ? 3.0 : plos && dp < 10 ? 1.5 : 1.1) * (e.fast ? 2 : 1);
           this.chase(e, prey, sp, dt, plos);
         }
+      } else if (e.type === 'ceiling') {
+        // creeps slowly across the ceiling, room to room
+        s.mode = 'crawl';
+        if (!ai.path || ai.t > 25) {
+          ai.t = 0;
+          const [cx, cy] = C.cellAt(s.x, s.z);
+          const tx = Math.max(0, Math.min(C.N - 1, cx + Math.floor(R(-2, 3)))), ty = Math.max(0, Math.min(C.N - 1, cy + Math.floor(R(-2, 3))));
+          const [gx, gz] = C.center(tx, ty);
+          ai.path = C.path(cx, cy, gx + R(-1.5, 1.5), gz + R(-1.5, 1.5)); ai.pi = 0;
+        }
+        if (this.followPath(e, 0.55, dt)) ai.path = null;
       } else if (e.type === 'rager') {
         s.mode = 'rage';
         if (ai.wait > 0) { ai.wait -= dt; s.yaw += Math.sin(ai.t * 31) * dt * 6; continue; }
@@ -384,7 +395,8 @@ export class Elves {
       v.sndT -= dt;
       if (v.sndT <= 0) {
         v.sndT = R(0.7, 1.4);
-        if (mode === 'crawl' && dCam < 26 && v.spd > 0.2) hear?.('scratch', v.x, v.z);
+        if (mode === 'crawl' && e.type !== 'ceiling' && dCam < 26 && v.spd > 0.2) hear?.('scratch', v.x, v.z);
+        else if (e.type === 'ceiling' && dCam < 14) { hear?.('whimper', v.x, v.z); v.sndT = R(3, 7); }
         else if (mode === 'rage' && dCam < 30) { hear?.(Math.random() < 0.6 ? 'giggle' : 'scratch', v.x, v.z); v.sndT = R(0.4, 1.2); }
         else if (mode === 'stand' && dCam < 7 && Math.random() < 0.25) { hear?.('whisper', v.x, v.z); v.sndT = R(6, 12); }
         else if (mode === 'idle' && e.type === 'runner' && dCam < 9 && Math.random() < 0.2) { hear?.('giggle', v.x, v.z); v.sndT = R(5, 10); }
@@ -394,6 +406,7 @@ export class Elves {
       if (!vis) continue;
       m.root.position.set(v.x, 0, v.z);
       m.root.rotation.set(0, v.yaw, 0);
+      if (e.type === 'ceiling') { m.root.position.set(v.x, 4.2, v.z); m.root.rotation.set(0, v.yaw, Math.PI); m.root.updateMatrixWorld(true); }
       this.pose(e, dt, t, camPos);
       if (e.type === 'crawler') this.wallCling(e, dt, camPos);
       if (this.scare && this.scare.index === e.i) this.placeForScare(e, t);

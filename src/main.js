@@ -284,6 +284,7 @@ function elfSound(type, x, z) {
   if (type === 'giggle') audio.elfGiggle({ x, y: 1, z }, o, 0.45);
   else if (type === 'scratch') audio.elfScratch({ x, y: 0.2, z }, o);
   else if (type === 'whisper') audio.whisper({ x, y: 1.3, z }, o, 0.22, 5);
+  else if (type === 'whimper') audio.whimper({ x, y: 3.9, z }, o);
   else if (type === 'poof') { particles.burst(x, 0.8, z, { count: 50, size: 0.5, speed: 1.4, life: 2 }); audio.whisper({ x, y: 1, z }, o, 0.3, 1); }
 }
 
@@ -1195,9 +1196,12 @@ function updateGame(dt, t) {
   const dead = S.s.mode === 'dead';
   audio.setListener(c, camera.getWorldDirection(v3));
   audio.updateSantaVoice({ x: S.v.x, z: S.v.z }, lastSantaOccl, S.s.mode, dead || G.ended);
-  const near = dead || G.ended ? 0 : clamp(1 - ds / 24, 0, 1) * (G.santaLos ? 1 : 0.7);
+  const lookDir = camera.getWorldDirection(new THREE.Vector3());
+  const lookDot = ds > 0.01 ? (lookDir.x * (S.v.x - c.x) + lookDir.z * (S.v.z - c.z)) / (ds * Math.hypot(lookDir.x, lookDir.z) || 1) : 1;
+  G.lookingAt = damp(G.lookingAt || 0, G.santaLos && lookDot > 0.82 ? 1 : 0, 4, dt);
+  const near = dead || G.ended ? 0 : clamp(1 - ds / 24, 0, 1) * G.lookingAt;
   const chasing = !dead && S.s.mode === 'chase' && ds < 40 ? 1 : 0;
-  const tension = dead ? 0 : clamp(Math.max(near * 1.1, chasing, S.s.mode === 'notice' && ds < 25 ? 0.8 : 0), 0, 1);
+  const tension = dead ? 0 : clamp(Math.max(near * 1.1, chasing * G.lookingAt), 0, 1);
   if (!G.ended) audio.setMood(tension, chasing, G.scare ? 0 : near, clamp(1 - ds / 32, 0, 1));
   audio.tick();
   const danger = dead ? 0 : clamp(1 - ds / 13, 0, 1);

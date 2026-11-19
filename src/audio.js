@@ -583,6 +583,21 @@ export class AudioEngine {
       const g = this.gain(0); this.env(g, t, 0.002, 0.12, 0.08); s.connect(g); g.connect(o);
     }
   }
+  // soft, wet whimpering from above
+  whimper(pos, occl = 0) {
+    if (!this.ready) return;
+    let t = this.t;
+    const o = this.out(pos, occl, { life: 3, ref: 1.2, verb: 0.7 });
+    for (let i = 0; i < 3 + Math.floor(Math.random() * 3); i++) {
+      const d = R(0.25, 0.5), f = R(380, 520);
+      const s = this.osc('triangle', f, t, d + 0.05); s.frequency.setValueAtTime(f, t); s.frequency.exponentialRampToValueAtTime(f * 0.72, t + d);
+      const v = this.osc('sine', 7, t, d), vg = this.gain(f * 0.03); v.connect(vg); vg.connect(s.frequency);
+      const bp = this.filt('bandpass', 900, 3), g = this.gain(0); this.env(g, t, 0.05, 0.16, d * 0.8);
+      s.connect(bp); bp.connect(g); g.connect(o);
+      const n = this.noiseSrc(t, d), nf = this.filt('bandpass', 1800, 4), ng = this.gain(0); this.env(ng, t, 0.05, 0.05, d * 0.8); n.connect(nf); nf.connect(ng); ng.connect(o);
+      t += d + R(0.15, 0.45);
+    }
+  }
   sting() {
     // sudden low piano cluster: a "something's wrong" sting
     if (!this.ready) return;
@@ -662,6 +677,10 @@ export class AudioEngine {
     const t = this.t;
     const o = this.gain(1.3);
     o.connect(this.scareIn);
+    // a deep, raw scream under the shrieking
+    this.scream(t, o, { base: 240, dur: 1.05, vol: 1.3, rise: 1.25, voices: 5 });
+    const sub = this.osc('sine', 85, t, 0.7); sub.frequency.exponentialRampToValueAtTime(35, t + 0.6);
+    const sg = this.gain(0); this.env(sg, t, 0.003, 1.3, 0.6); sub.connect(sg); sg.connect(o);
     // sharp crack on contact
     const n = this.noiseSrc(t, 0.12), nf = this.filt('highpass', 2500), ng = this.gain(0);
     this.env(ng, t, 0.001, 1.6, 0.1); n.connect(nf); nf.connect(ng); ng.connect(o);
