@@ -109,7 +109,44 @@ function updateTrails(dt) {
   }
   if (dirty) trails.mesh.instanceColor.needsUpdate = true;
 }
+// a glowing path on the floor leading to your friend's sack
+const GUIDE_MAX = 400;
+let guide = null;
+function updateGuide(dt, t) {
+  if (!guide) {
+    const g = new THREE.PlaneGeometry(1, 1); g.rotateX(-Math.PI / 2);
+    const m = new THREE.MeshBasicMaterial({ map: T.glow, color: 0xffc860, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false });
+    const mesh = new THREE.InstancedMesh(g, m, GUIDE_MAX); mesh.frustumCulled = false; mesh.count = 0;
+    scene.add(mesh);
+    guide = { mesh, t: 0, pts: [] };
+  }
+  const sack = [...world.items.sacks.values()].find((s) => s.pid !== G.localId);
+  if (!sack || !meAlive()) { guide.mesh.count = 0; return; }
+  guide.t -= dt;
+  if (guide.t <= 0) {
+    guide.t = 0.5;
+    const C = world.castle;
+    const [cx, cy] = C.cellAt(player.pos.x, player.pos.z);
+    const way = [[player.pos.x, player.pos.z], ...C.path(cx, cy, sack.x, sack.z)];
+    const pts = [];
+    for (let i = 0; i < way.length - 1; i++) {
+      const [ax, az] = way[i], [bx, bz] = way[i + 1];
+      const L = Math.hypot(bx - ax, bz - az), n = Math.max(1, Math.floor(L / 0.7));
+      for (let k = 0; k < n; k++) pts.push([ax + ((bx - ax) * k) / n, az + ((bz - az) * k) / n]);
+    }
+    guide.pts = pts.slice(1, GUIDE_MAX);
+  }
+  const m4 = new THREE.Matrix4();
+  guide.pts.forEach(([x, z], i) => {
+    const s = 0.22 + 0.08 * Math.sin(t * 4 - i * 0.5);
+    m4.makeScale(s, 1, s).setPosition(x, 0.015, z);
+    guide.mesh.setMatrixAt(i, m4);
+  });
+  guide.mesh.count = guide.pts.length;
+  guide.mesh.instanceMatrix.needsUpdate = true;
+}
 function clearTrails() {
+  if (guide) { scene.remove(guide.mesh); guide.mesh.dispose(); guide = null; }
   if (!trails) return;
   scene.remove(trails.mesh); trails.mesh.dispose(); trails = null;
 }
@@ -514,7 +551,8 @@ function applyEvent(ev) {
     }
     case 'sack': {
       W.items.addSack(ev.id, ev.x, ev.z);
-      if (ev.id !== local) showMsg(`${name(ev.id)} is hanging in His sack somewhere. Listen for them. Cut them down.`, 6);
+      if (ev.id !== local) showMsg(`${name(ev.id)} is in His sack. Follow the glowing path and cut them down.`, 6);
+      else showMsg(`You're in His sack. ${G.remote ? name(G.remote.id) : 'Your friend'} can follow a path to you. Watch them.`, 6);
       break;
     }
     case 'freed': {
@@ -1151,6 +1189,7 @@ function updateGame(dt, t) {
     if (k < 0.3) audio.creak(pos, 0.6); else if (k < 0.5) audio.chains(pos, 0.6); else if (k < 0.7) audio.knock(pos, 0.7); else if (k < 0.85) audio.drip(pos); else audio.whisper(pos, 0.6, 0.18, 6);
   }
   updateTrails(dt);
+  updateGuide(dt, t);
   G.fakeT -= dt;
   if (G.fakeT <= 0 && alive && !G.scare && G.time > 20) { G.fakeT = R(24, 50); fakeScare(); }
   G.bellT -= dt;

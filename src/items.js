@@ -271,8 +271,8 @@ export class Items {
       P.alpha += (want - P.alpha) * Math.min(1, dt * 0.6);
       if (P.alpha < 0.005 && !want) { P.hintMat.opacity = 0; P.dust.material.opacity = 0; continue; }
       const flick = 0.7 + Math.sin(t * 5.3 + P.x) * 0.2 + Math.random() * 0.1;
-      P.hintMat.opacity = P.alpha * (P.vault ? 0.12 : 0.2) * flick;
-      P.dust.material.opacity = P.alpha * 0.35;
+      P.hintMat.opacity = P.alpha * (P.vault ? 0.06 : 0.1) * flick;
+      P.dust.material.opacity = P.alpha * 0.16;
       const pos = P.dust.geometry.attributes.position;
       P.seeds.forEach((s, k) => {
         s[2] = (s[2] + dt * s[3]) % 1;
