@@ -353,15 +353,34 @@ export class Elves {
       return;
     }
     if (mode === 'crawl' || (mode === 'idle' && e.type === 'crawler')) {
-      // on hands and knees, head twisted upside down, staring at you
-      v.phase += dt * (0.5 + v.spd * 5);
-      const ph = Math.floor(v.phase * 3) / 3; // jerky
-      m.pelvis.position.y = 0.5 + Math.sin(ph * 2) * 0.015;
-      m.torso.rotation.set(1.3, 0, Math.sin(ph) * 0.08);
-      m.legs.forEach((l, i) => { const sw = Math.sin(ph + i * Math.PI) * 0.3; l.hip.rotation.set(-0.12 + sw, 0, (i ? -1 : 1) * 0.12); l.knee.rotation.x = 1.5 - sw * 0.3; l.ankle.rotation.x = 0.1; });
-      m.arms.forEach((a, i) => { const sw = Math.sin(ph + (i ? 0 : Math.PI)) * 0.35; a.sh.rotation.set(-1.3 + sw, 0, (i ? -1 : 1) * 0.18); a.el.rotation.x = -0.2 - Math.max(0, sw) * 0.6; a.hand.rotation.x = 1.2; });
-      m.neck.rotation.set(-1.15, 0, 0);
-      m.head.rotation.set(0.1, clamp(toCam, -1.0, 1.0) * 0.5, Math.PI * 0.88 + Math.sin(t * 7) * 0.05);
+      // spider-crawl: body low, knees and elbows splayed high, limbs placed in jerky snaps,
+      // freezing now and then — and the head twisted upside down, staring up at you
+      v.twT = (v.twT ?? 0) - dt;
+      if (v.twT <= 0) { v.twT = R(0.6, 2.4); v.freeze = Math.random() < 0.35 ? R(0.25, 0.7) : 0; v.jerk = R(-0.5, 0.5); }
+      if (v.freeze > 0) v.freeze -= dt;
+      else v.phase += dt * (0.6 + v.spd * 5.5);
+      const ph = Math.floor(v.phase * 4) / 4; // stop-motion steps
+      const step = (k) => Math.sin(ph + k);
+      m.pelvis.position.y = 0.36 + Math.abs(step(0)) * 0.03;
+      m.torso.rotation.set(1.42, step(0.5) * 0.18, step(0) * 0.12);
+      m.legs.forEach((l, i) => {
+        const sw = Math.sin(ph + i * Math.PI) * 0.4;
+        l.hip.rotation.set(-0.35 + sw, 0, (i ? -1 : 1) * 0.75);
+        l.knee.rotation.x = 1.9 - sw * 0.4;
+        l.ankle.rotation.x = 0.6;
+      });
+      m.arms.forEach((a, i) => {
+        const sw = Math.sin(ph + (i ? 0 : Math.PI)) * 0.5;
+        const lift = Math.max(0, sw);
+        a.sh.rotation.set(-1.0 + sw * 0.8, 0, (i ? -1 : 1) * (0.95 + lift * 0.3));
+        a.el.rotation.x = -1.35 - lift * 0.5;
+        a.hand.rotation.x = 1.0;
+      });
+      m.neck.rotation.set(-1.3, 0, 0);
+      // face the camera, upside down, with a twitch
+      m.root.updateMatrixWorld(true);
+      m.head.lookAt(camPos);
+      m.head.rotateZ(Math.PI * 0.92 + (v.freeze > 0 ? v.jerk : 0) + Math.sin(t * 9) * 0.04);
       return;
     }
     const running = mode === 'charge' || mode === 'flee';
