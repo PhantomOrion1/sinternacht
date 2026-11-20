@@ -73,6 +73,8 @@ export class Santa {
     const s = this.s;
     const dx = tx - s.x, dz = tz - s.z, d = Math.hypot(dx, dz);
     if (d < 0.02) return d;
+    // on all fours He doesn't glide: He lurches, near-stops, then scuttles again
+    if (s.style === 'crawl') speed *= 0.4 + 2.4 * Math.max(0, Math.sin(this.ai.t * 4.6)) ** 2;
     const step = Math.min(d, speed * dt);
     const p = { x: s.x + (dx / d) * step, z: s.z + (dz / d) * step };
     this.castle.collide(p, 0.42, true);
@@ -125,10 +127,14 @@ export class Santa {
           const [cx, cz] = C.center(cell[0], cell[1]);
           this.setPath(cx + R(-1.5, 1.5), cz + R(-1.5, 1.5));
         }
+        // now and then He just stops dead mid-step, listening, then carries on
+        ai.pauseCd = (ai.pauseCd ?? R(5, 12)) - dt;
+        if (ai.pauseCd <= 0) { ai.pauseCd = R(6, 14); ai.pauseT = R(0.7, 1.8); }
         if (ai.glance) {
           const g = alive.find((p) => p.id === ai.glance);
           if (g) s.yaw = dampAngle(s.yaw, Math.atan2(g.x - s.x, g.z - s.z), 1.6, dt);
-        } else if (this.followPath(1.45, dt)) this.startSearch(R(2.5, 5));
+        } else if (ai.pauseT > 0) ai.pauseT -= dt;
+        else if (this.followPath(ai.creep ? 1.2 : 1.45, dt)) this.startSearch(R(2.5, 5));
         this.director(alive, W);
         break;
       }
@@ -170,7 +176,8 @@ export class Santa {
         ai.styleT = (ai.styleT ?? 0) - dt;
         if (ai.styleT <= 0) {
           const r = Math.random();
-          ai.style = r < 0.35 ? 'run' : r < 0.55 ? 'sprint' : r < 0.78 ? 'crawl' : 'stalk';
+          // a chase that starts while He's on all fours stays that way at first
+          ai.style = ai.creep && ai.modeT < 0.5 ? 'crawl' : r < 0.25 ? 'run' : r < 0.4 ? 'sprint' : r < 0.82 ? 'crawl' : 'stalk';
           ai.styleT = ai.style === 'sprint' ? R(1.0, 1.6) : ai.style === 'stalk' ? R(1.8, 3.2) : R(2.5, 4.5);
         }
         s.style = ai.style;
@@ -230,6 +237,11 @@ export class Santa {
         break;
       }
     }
+    // He spends long stretches roaming on all fours
+    ai.creepT = (ai.creepT ?? R(4, 12)) - dt;
+    if (ai.creepT <= 0) { ai.creep = !ai.creep; ai.creepT = ai.creep ? R(8, 18) : R(10, 22); }
+    if (['wander', 'investigate', 'search'].includes(s.mode)) s.style = ai.creep ? 'crawl' : 'walk';
+    else if (s.mode !== 'chase') s.style = 'walk';
     // head behaviour
     let hy = 0, hp = 0;
     const look = (p) => { hy = angleDiff(s.yaw, Math.atan2(p.x - s.x, p.z - s.z)); hp = -0.35; };
@@ -401,10 +413,11 @@ export class Santa {
     v.duck = damp(v.duck, clamp(1 - (dd - 0.8) / 1.7, 0, 1), 8, dt);
     if (dead) v.death = Math.min(1.6, v.death + dt * 0.55);
     // stop-motion: when standing still, the pose updates in jerky 11fps steps
-    const style = chase ? s.style || 'run' : 'walk';
-    const stepped = !chase && !this.scare && mode !== 'stunned' && mode !== 'watch' && s.speed < 0.3;
+    const style = s.style || (chase ? 'run' : 'walk');
+    // crawling, His limbs move in the same broken steps, like a puppet with a missing frame
+    const stepped = !this.scare && !dead && ((!chase && mode !== 'stunned' && mode !== 'watch' && s.speed < 0.3) || style === 'crawl');
     v.accum = (v.accum || 0) + dt;
-    if (stepped && v.accum < 1 / 11) { this.place(); return; }
+    if (stepped && v.accum < 1 / (style === 'crawl' ? 14 : 11)) { this.place(); return; }
     const pdt = stepped ? v.accum : dt;
     v.accum = 0;
     const speed = dead ? 0 : s.speed;
@@ -451,7 +464,7 @@ export class Santa {
     }
     // torso: huge, hunched, swaying over the thin legs
     const lean = lerp(0.22 + duck * 0.62 + v.reach * 0.3 + (running ? 0.22 : 0) + (dead ? v.death * 0.55 : 0), 1.35, cr);
-    const swayY = Math.sin(v.phase) * 0.12 * v.amp, swayZ = Math.sin(v.phase) * 0.06 * v.amp + (dead ? v.death * 0.35 : 0);
+    const swayY = Math.sin(v.phase) * (0.12 + cr * 0.2) * v.amp, swayZ = Math.sin(v.phase) * (0.06 + cr * 0.16) * v.amp + (dead ? v.death * 0.35 : 0);
     for (const n of ['spine04', 'spine03', 'spine02', 'spine01']) rot(n, lean / 4, swayY / 4, swayZ / 4);
     rot('clavicle.L', 0, 0, 0.22 + v.reach * 0.1); rot('clavicle.R', 0, 0, -0.22 - v.reach * 0.1);
     // arms: far too long, hanging past the knees
@@ -465,8 +478,8 @@ export class Santa {
       let ax = lerp(hang, mode === 'feed' ? feedA : reachA, v.reach);
       if (running) ax = lerp(-lean - opp * 1.0 - 0.15, reachA, 0.25);
       if (mode === 'stunned') ax = -lean - 2.5 + Math.sin(t * 20 + i) * 0.3;
-      ax = lerp(ax, -lean - 0.35 - opp * 0.6, cr); // crawling: long arms pulling along the floor
-      let az = sg * (armDown - v.reach * 0.25);
+      ax = lerp(ax, -lean - 0.45 - opp * 0.85 + twArm[i] * 0.3, cr); // crawling: long arms clawing along the floor
+      let az = lerp(sg * (armDown - v.reach * 0.25), sg * 0.42, cr); // elbows splayed out like a spider's
       if (mode === 'stunned') az = sg * 0.2;
       rot(`upperarm01.${SD[i]}`, ax, 0, az);
       rot(`lowerarm01.${SD[i]}`, -0.15 - v.reach * 0.3 - (i === 1 && v.reach < 0.5 ? 0.3 : 0));
@@ -485,6 +498,8 @@ export class Santa {
     if (chase) jaw += Math.sin(t * 19) * 0.05;
     let hy = v.headYaw, hp = v.headPitch, hz = 0.16 + twHead * 0.3 + Math.sin(t * 0.7) * 0.06; // head cocked, always
     if (chase) { hz += Math.sin(t * 31) * 0.08; hy += Math.sin(t * 23) * 0.05; }
+    // on all fours the head stays up, staring, twisted far onto one side
+    hz += cr * (0.55 + Math.sin(t * 0.9) * 0.12);
     if (mode === 'stunned') { hp = 0.8; hz += Math.sin(t * 25) * 0.4; }
     if (mode === 'watch') { hz = 0.2 + Math.sin(t * 0.35) * 0.4; hy = Math.sin(t * 0.21) * 0.25; hp = -0.1 + Math.sin(t * 0.5) * 0.1; }
     if (dead) hp = 1.1 * Math.min(1, v.death);
@@ -500,7 +515,7 @@ export class Santa {
       }
     }
     rot('jaw', Math.max(0, jaw));
-    M.staff.visible = !dead && v.reach < 0.5 && !this.scare;
+    M.staff.visible = !dead && v.reach < 0.5 && !this.scare && v.crawl < 0.3; // dropped while He's on all fours
     // place, then stand the feet on the floor
     this.place();
     M.root.position.set(shudder * R(-0.03, 0.03) + (mode === 'watch' ? Math.sin(t * 0.6) * 0.06 : 0), 0, shudder * R(-0.03, 0.03));
