@@ -13,7 +13,7 @@ A first-person co-op horror game that runs in the browser. It's the night of 5 D
 - **Or escape**: one old door, in a sealed room deep in the castle, reachable only through a hidden passage. Forcing it open takes 6 loud seconds, and He will come for you.
 - **His helpers** are covered in soot and harmless, until you touch one. Some crawl toward you, some just stand there staring, and some charge at you and veer off at the last second.
 - **He** sees your flashlight from far away, and He can feel it when you shine it on Him. Turn the light off and crouch to hide. He hears you running.
-- In co-op, if He catches your friend they end up in His sack, hanging somewhere in the castle. Follow the muffled screams and hold **E** to cut them down.
+- In co-op, if He catches a friend they end up in His sack, hanging somewhere in the castle. Follow the muffled screams and hold **E** to cut them down.
 
 ## Controls
 
@@ -28,9 +28,9 @@ A first-person co-op horror game that runs in the browser. It's the night of 5 D
 | Left click | Shoot the crossbow |
 | Esc | Pause |
 
-## Co-op (2 players)
+## Co-op (2–3 players)
 
-One player picks **Host a game** and sends the 4-letter code. The other picks **Join a friend** and types it in. The connection is peer-to-peer (PeerJS). The host's browser runs the monsters and the guest mirrors them.
+One player picks **Host a game** and sends the 4-letter code. One or two friends pick **Join a friend** and type it in; the host presses **Begin** once everyone is in. The connection is peer-to-peer (PeerJS). The host's browser runs the monsters and relays everyone's positions; the guests mirror it. When you're caught, click to switch between the friends you're watching.
 
 Some strict networks (work or school Wi-Fi) block direct peer-to-peer connections. If you can't connect, add a TURN relay to `config.json`:
 

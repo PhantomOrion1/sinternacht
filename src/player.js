@@ -190,6 +190,8 @@ export class RemotePlayer {
   addTo(scene) { scene.add(this.group, this.light, this.target); }
   removeFrom(scene) { scene.remove(this.group, this.light, this.target); }
   set(a) {
+    if (!a) return;
+    this.raw = a;
     const s = this.state;
     [s.x, s.z, s.yaw, s.pitch] = a;
     s.flash = !!a[4]; s.crouch = !!a[5]; s.moving = !!a[6]; s.sprint = !!a[7];

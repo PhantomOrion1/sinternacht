@@ -52,7 +52,7 @@
   <p class="tag">Hij weet of je stout bent geweest.</p>
   <nav>
     <button data-act="solo">Play alone</button>
-    <button data-act="host">Host a game</button>
+    <button data-act="host">Host a game <small>2–3 players</small></button>
     <button data-act="join">Join a friend</button>
     <div id="joinbox" hidden><input id="code" maxlength="4" placeholder="CODE" autocomplete="off" spellcheck="false"><button id="joinGo">Join</button></div>
     <button data-act="howto">How to play</button>
@@ -69,7 +69,7 @@
   <p><b>Some walls are not walls.</b> Hidden stone panels pivot open into the next room. Only a few work at any moment, and which ones keeps changing. Look for hairline cracks and dust drifting on a cold draft. He cannot follow you through them.</p>
   <p>There is <b>one way out</b>: an old door in a sealed room deep in the castle, reachable only through a hidden passage. Forcing it open takes time and is very, very loud. He will hear it.</p>
   <p>His helpers are harmless. Don't touch them.</p>
-  <p>He sees your flashlight from far away. Turn it off and crouch to hide. If He catches your friend, find the sack and cut them down.</p>
+  <p>He sees your flashlight from far away. Turn it off and crouch to hide. If He catches a friend, find the sack and cut them down. Up to three can play together.</p>
   <table class="keys">
     <tr><td>WASD</td><td>Move</td></tr>
     <tr><td>Mouse</td><td>Look</td></tr>
@@ -96,6 +96,7 @@
 <section id="lobby" class="screen" hidden>
   <p class="small">Room code</p>
   <div id="roomCode">····</div>
+  <ul id="lobbyPlayers"></ul>
   <p id="lobbyStatus">Opening the gates…</p>
   <button id="begin" class="big" disabled>Begin</button>
   <button id="leave" class="ghost">Leave</button>

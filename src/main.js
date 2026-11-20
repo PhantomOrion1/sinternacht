@@ -13,7 +13,7 @@ import { loadSinterData } from './sinter3d.js';
 import { Elves } from './elves.js';
 import { Items, PART_NAMES, buildCrossbow } from './items.js';
 import { Player, RemotePlayer } from './player.js';
-import { Net, loadIceConfig } from './net.js';
+import { Net, loadIceConfig, MAX_PLAYERS } from './net.js';
 import { Particles, FinalShader } from './fx.js';
 import { R, clamp, damp, lerp, angleDiff } from './rng.js';
 
@@ -85,6 +85,8 @@ function makeTrails() {
   scene.add(mesh);
   trails = { mesh, next: 0, life: new Float32Array(TRAIL_MAX), base: [], last: {}, m4: new THREE.Matrix4(), col: new THREE.Color() };
 }
+// every player leaves the same colour on every screen: host red, 2nd blue, 3rd green
+const TRAIL_RGB = { p1: [0.55, 0.02, 0.02], p2: [0.03, 0.12, 0.6], p3: [0.03, 0.45, 0.08] };
 function dropTrail(key, x, z, rgb) {
   const L = trails.last[key];
   if (L && Math.hypot(L[0] - x, L[1] - z) < 0.55) return;
@@ -98,8 +100,8 @@ function dropTrail(key, x, z, rgb) {
 }
 function updateTrails(dt) {
   if (!trails) makeTrails();
-  if (meAlive()) dropTrail('me', player.pos.x, player.pos.z, [0.55, 0.02, 0.02]);
-  if (G.remote && G.status[G.remote.id] === 'alive') dropTrail('friend', G.remote.v.x, G.remote.v.z, [0.03, 0.12, 0.6]);
+  if (meAlive()) dropTrail(G.localId, player.pos.x, player.pos.z, TRAIL_RGB[G.localId]);
+  for (const r of remotes()) if (G.status[r.id] === 'alive') dropTrail(r.id, r.v.x, r.v.z, TRAIL_RGB[r.id]);
   let dirty = false;
   for (let i = 0; i < TRAIL_MAX; i++) {
     if (trails.life[i] <= 0) continue;
@@ -121,7 +123,8 @@ function updateGuide(dt, t) {
     scene.add(mesh);
     guide = { mesh, t: 0, pts: [] };
   }
-  const sack = [...world.items.sacks.values()].find((s) => s.pid !== G.localId);
+  const sack = [...world.items.sacks.values()].filter((s) => s.pid !== G.localId)
+    .sort((a, b) => Math.hypot(a.x - player.pos.x, a.z - player.pos.z) - Math.hypot(b.x - player.pos.x, b.z - player.pos.z))[0];
   if (!sack || !meAlive()) { guide.mesh.count = 0; return; }
   guide.t -= dt;
   if (guide.t <= 0) {
@@ -220,7 +223,11 @@ document.addEventListener('mousemove', (e) => {
   if (!locked() || !G || G.ended) return;
   player.look(e.movementX, e.movementY * (settings.invertY ? -1 : 1), settings.sens);
 });
-document.addEventListener('mousedown', (e) => { if (locked() && e.button === 0) shoot(); });
+document.addEventListener('mousedown', (e) => {
+  if (!locked() || e.button !== 0) return;
+  if (G?.spectate) { const ids = othersIn().map((r) => r.id); if (ids.length > 1) G.specId = ids[(ids.indexOf(G.specId) + 1) % ids.length]; return; }
+  shoot();
+});
 renderer.domElement.addEventListener('click', () => { if (G && !G.ended) lock(); });
 function toggleFullscreen() {
   const d = document, el = d.documentElement;
@@ -350,8 +357,12 @@ function updateMenu(dt, t) {
 }
 
 // ---------------------------------------------------------------- game start / end
-const otherId = (id) => (id === 'p1' ? 'p2' : 'p1');
 const isHost = () => G && G.mode !== 'guest';
+const remotes = () => (G ? Object.values(G.remotes) : []);
+const othersIn = () => remotes().filter((r) => ['alive', 'escaping'].includes(G.status[r.id]));
+const listNames = (ids) => { const n = ids.map(name); return n.length <= 1 ? (n[0] || '') : n.slice(0, -1).join(', ') + ' and ' + n[n.length - 1]; };
+const SPAWN_OFF = { p1: -0.9, p2: 0.9, p3: 0 };
+function clearRemotes() { for (const r of remotes()) r.removeFrom(scene); if (G) G.remotes = {}; }
 const meAlive = () => G && G.status[G.localId] === 'alive';
 
 function startGame({ seed, mode, localId, names }) {
@@ -361,12 +372,13 @@ function startGame({ seed, mode, localId, names }) {
   buildWorld(seed);
   const C = world.castle;
   const [sx, sz] = C.spawnPos;
-  const off = mode === 'solo' ? 0 : localId === 'p1' ? -0.9 : 0.9;
+  const offOf = (id) => (mode === 'solo' ? 0 : SPAWN_OFF[id] ?? 0);
+  const off = offOf(localId);
   player.reset(sx + Math.cos(C.spawnYaw) * off, sz - Math.sin(C.spawnYaw) * off, C.spawnYaw);
   G = {
     mode, localId, names, seed,
     status: { [localId]: 'alive' },
-    remote: null,
+    remotes: {}, specId: null,
     parts: 0, crossbow: false, bolts: 0, reloadT: 0, recoil: 0,
     time: 0, ended: false, paused: false,
     doorId: 0, doorT: R(210, 270), passT: 0, lightT: R(35, 60), fakeT: R(30, 45), bellT: 150, holdKey: '', grindT: 0,
@@ -376,12 +388,16 @@ function startGame({ seed, mode, localId, names }) {
     stats: { hits: 0 }, phantom: null, introT: 0,
   };
   if (mode !== 'solo') {
-    const oid = otherId(localId);
-    G.status[oid] = 'alive';
-    G.remote = new RemotePlayer(names[oid], T);
-    G.remote.id = oid;
-    G.remote.addTo(scene);
-    G.remote.set([sx - Math.cos(C.spawnYaw) * off, sz + Math.sin(C.spawnYaw) * off, C.spawnYaw, 0, 1, 0, 0, 0]);
+    for (const oid of Object.keys(names)) {
+      if (oid === localId) continue;
+      G.status[oid] = 'alive';
+      const r = new RemotePlayer(names[oid], T);
+      r.id = oid;
+      r.addTo(scene);
+      const o = offOf(oid);
+      r.set([sx + Math.cos(C.spawnYaw) * o, sz - Math.sin(C.spawnYaw) * o, C.spawnYaw, 0, 1, 0, 0, 0]);
+      G.remotes[oid] = r;
+    }
   }
   world.santa.isHost = mode !== 'guest';
   world.elves.isHost = mode !== 'guest';
@@ -434,7 +450,7 @@ function intro() {
 }
 
 function quitToMenu() {
-  if (G?.remote) G.remote.removeFrom(scene);
+  clearRemotes();
   if (G?.bow) camera.remove(G.bow);
   if (G?.phantom) world?.elves.group.remove(G.phantom.root);
   G = null;
@@ -452,18 +468,22 @@ function showEnd(ev) {
   try { document.exitPointerLock(); } catch (e) { /* ignore */ }
   audio.stopAll();
   const me = (ev.status || G.status)[G.localId];
-  const friend = G.remote ? G.names[G.remote.id] : null;
-  const fstat = G.remote ? (ev.status || G.status)[G.remote.id] : null;
+  const stAll = ev.status || G.status;
+  const others = Object.keys(G.names).filter((id) => id !== G.localId && stAll[id] && stAll[id] !== 'gone');
+  const friend = others.length ? listNames(others) : null;
+  const takenOthers = others.filter((id) => stAll[id] === 'taken');
+  const outOthers = others.filter((id) => stAll[id] === 'escaped');
   let title = 'Meegenomen', text = "He stuffed you in His sack. You're going to Spain.", win = false;
   if (ev.result === 'kill') { title = 'De Sint is dood'; text = 'One silver bolt. He folded up like a broken umbrella and crumbled into soot. The castle is quiet. For now.'; win = true; }
   else if (ev.result === 'escape') {
     if (me === 'escaped') {
       win = true; title = 'Ontsnapt';
       text = 'You crawled out into the snow. Behind you, somewhere in the walls, something is humming.';
-      if (friend && fstat === 'taken') text = `You got out. ${friend} didn't. You can still hear them screaming inside the sack.`;
-    } else { title = 'Meegenomen'; text = `${friend || 'Your friend'} got out. You're in the sack, on your way to Spain.`; }
-  } else if (ev.result === 'disconnect') { title = 'Verbroken'; text = 'The connection to your friend is gone. So is your friend.'; }
-  else if (friend) text = `He got both of you. Two sacks, one long trip to Spain.`;
+      if (takenOthers.length) text = `You got out. ${listNames(takenOthers)} didn't. You can still hear ${takenOthers.length > 1 ? 'the sacks' : 'them'} screaming inside.`;
+    } else { title = 'Meegenomen'; text = `${outOthers.length ? listNames(outOthers) : 'Your friend'} got out. You're in the sack, on your way to Spain.`; }
+  } else if (ev.result === 'disconnect') { title = 'Verbroken'; text = 'The connection to the host is gone. So is everyone else.'; }
+  else if (others.length === 1) text = `He got both of you. Two sacks, one long trip to Spain.`;
+  else if (others.length > 1) text = `He got all ${others.length + 1} of you. ${['', '', 'Two', 'Three'][others.length + 1]} sacks, one long trip to Spain.`;
   $('endTitle').textContent = title;
   $('endText').textContent = text;
   $('endStats').innerHTML = `Survived ${fmtTime(ev.time ?? G.time)} · Crossbow parts ${G.parts}/4 · Bolts that hit ${G.stats.hits}`;
@@ -534,7 +554,8 @@ function applyEvent(ev) {
         G.escaping = null;
         U.white.value = 0;
         $('deadTitle').textContent = 'Ontsnapt';
-        $('deadText').textContent = G.remote && G.status[G.remote.id] === 'alive' ? `You're out. ${name(G.remote.id)} is still inside.` : "You're out.";
+        const inside = remotes().filter((r) => G.status[r.id] === 'alive').map((r) => r.id);
+        $('deadText').textContent = inside.length ? `You're out. ${listNames(inside)} ${inside.length > 1 ? 'are' : 'is'} still inside.` : "You're out.";
         $('dead').hidden = false;
         U.blackout.value = 1;
         setTimeout(() => { if (G && !G.ended) { $('dead').hidden = true; U.blackout.value = 0; } }, 3500);
@@ -545,7 +566,7 @@ function applyEvent(ev) {
       G.status[ev.id] = 'taken';
       if (ev.id === local) startSantaScare();
       else {
-        const r = G.remote?.v;
+        const r = G.remotes[ev.id]?.v;
         if (r) audio.distantScream({ x: r.x, y: 1.6, z: r.z });
         audio.sting();
         showMsg(`${name(ev.id)} was taken.`, 4);
@@ -561,7 +582,7 @@ function applyEvent(ev) {
     case 'sack': {
       W.items.addSack(ev.id, ev.x, ev.z);
       if (ev.id !== local) showMsg(`${name(ev.id)} is in His sack. Follow the glowing path and cut them down.`, 6);
-      else showMsg(`You're in His sack. ${G.remote ? name(G.remote.id) : 'Your friend'} can follow a path to you. Watch them.`, 6);
+      else { const o = remotes().filter((r) => G.status[r.id] === 'alive').map((r) => r.id); showMsg(`You're in His sack. ${o.length ? listNames(o) : 'Your friends'} can follow a path to you. Watch them.`, 6); }
       break;
     }
     case 'freed': {
@@ -636,6 +657,13 @@ function applyEvent(ev) {
     }
     case 'passOpen': { const P = W.items.openPassage(ev.id, ev.a); if (P) audio.stoneGrind({ x: P.x, y: 1.2, z: P.z }, 0.7); break; }
     case 'passClose': { const P = W.items.closePassage(ev.id); if (P) audio.stoneGrind({ x: P.x, y: 1.2, z: P.z }, 0.6); break; }
+    case 'left': {
+      G.status[ev.id] = 'gone';
+      W.items.removeSack?.(ev.id);
+      if (G.remotes[ev.id]) { G.remotes[ev.id].removeFrom(scene); delete G.remotes[ev.id]; }
+      if (ev.id !== local) showMsg(`${name(ev.id)} lost the connection.`, 5);
+      break;
+    }
     case 'end': showEnd(ev); break;
   }
 }
@@ -663,9 +691,10 @@ function aiPlayers() {
     grabbed: (G.grabUntil[id] || 0) > G.time,
   });
   const out = [mk(G.localId, player.pos.x, player.pos.z, player.yaw, player.lightOn(), player.crouch, player.sprinting)];
-  if (G.remote && G.status[G.remote.id] !== 'gone') {
-    const s = G.remote.state;
-    out.push(mk(G.remote.id, s.x, s.z, s.yaw, s.flash, s.crouch, s.sprint));
+  for (const r of remotes()) {
+    if (G.status[r.id] === 'gone') continue;
+    const s = r.state;
+    out.push(mk(r.id, s.x, s.z, s.yaw, s.flash, s.crouch, s.sprint));
   }
   aiCache = out; aiCacheT = G.time;
   return out;
@@ -712,7 +741,7 @@ function handleRequest(from, req) {
       break;
     }
     case 'shot': {
-      net?.send({ t: 'ev', ev: { k: 'shot', by: from, o: req.o, d: req.d, len: req.len, hit: req.hit } });
+      emit({ k: 'shot', by: from, o: req.o, d: req.d, len: req.len, hit: req.hit });
       if (pos) G.noises.push({ x: pos.x, z: pos.z, r: 26 });
       break;
     }
@@ -742,35 +771,38 @@ function applyHit(shooterPos) {
 }
 
 // ---------------------------------------------------------------- networking glue
-function onNetMessage(m) {
+function onNetMessage(m, from) {
   if (!m || typeof m !== 'object') return;
   switch (m.t) {
     case 'hello': {
-      const oid = net.isHost ? 'p2' : 'p1';
-      lobbyNames[oid] = String(m.name || '').slice(0, 14) || (oid === 'p1' ? 'Host' : 'Friend');
-      if (net.isHost) {
-        $('lobbyStatus').textContent = `${lobbyNames.p2} is at the gate.`;
-        $('begin').disabled = false;
-        if (audio.ready) audio.pickup();
-      } else $('lobbyStatus').textContent = `You're in ${lobbyNames.p1}'s castle. Waiting for them to begin…`;
+      if (!net.isHost) break;
+      lobbyNames[from] = String(m.name || '').slice(0, 14) || 'Friend';
+      if (audio.ready) audio.pickup();
+      shareLobby();
       break;
     }
-    case 'full': $('menuMsg').textContent = 'That game already has two players.'; net.close(); show('menu'); break;
+    case 'lobby': {
+      if (net.isHost) break;
+      lobbyNames = m.names;
+      if (!G) showLobby();
+      break;
+    }
+    case 'full': $('menuMsg').textContent = `That game is full (${MAX_PLAYERS} players) or has already started.`; net.close(); show('menu'); break;
     case 'start': {
       if (net.isHost) break;
       lobbyNames = m.names;
-      if (G) { if (G.remote) G.remote.removeFrom(scene); if (G.bow) camera.remove(G.bow); G = null; }
-      startGame({ seed: m.seed, mode: 'guest', localId: 'p2', names: m.names });
+      if (G) { clearRemotes(); if (G.bow) camera.remove(G.bow); G = null; }
+      startGame({ seed: m.seed, mode: 'guest', localId: net.myId || 'p2', names: m.names });
       break;
     }
     case 'ev': if (G && !net.isHost) applyEvent(m.ev); break;
-    case 'req': if (G && net.isHost) handleRequest('p2', m.req); break;
-    case 'p': if (G?.remote && net.isHost) G.remote.set(m.p); break;
+    case 'req': if (G && net.isHost) handleRequest(from, m.req); break;
+    case 'p': if (net.isHost) G?.remotes[from]?.set(m.p); break;
     case 's': {
       if (!G || net.isHost || !world) break;
       world.santa.applyNet(m.s);
       world.elves.applyNet(m.e);
-      G.remote?.set(m.p);
+      for (const [id, p] of Object.entries(m.ps || {})) if (id !== G.localId) G.remotes[id]?.set(p);
       for (const [id, st] of Object.entries(m.st)) {
         if (id === G.localId && G.escaping && st === 'escaping') continue;
         G.status[id] = st;
@@ -781,6 +813,27 @@ function onNetMessage(m) {
 }
 let lobbyNames = {};
 function myName() { return (settings.name || '').trim().slice(0, 14) || 'Stranger'; }
+// who is actually in the room right now (the host plus every guest still connected)
+function roster() {
+  const out = { p1: lobbyNames.p1 || myName() };
+  if (net?.isHost) for (const id of net.ids()) if (lobbyNames[id]) out[id] = lobbyNames[id];
+  return out;
+}
+function shareLobby() {
+  lobbyNames = roster();
+  net?.send({ t: 'lobby', names: lobbyNames });
+  showLobby();
+}
+function showLobby() {
+  const ids = Object.keys(lobbyNames).sort();
+  const n = ids.length;
+  $('lobbyPlayers').innerHTML = ids.map((id) => `<li>${escapeHtml(lobbyNames[id])}${id === 'p1' ? ' <small>host</small>' : ''}${net && id === net.myId ? ' <small>you</small>' : ''}</li>`).join('');
+  if (net?.isHost) {
+    $('begin').disabled = n < 2;
+    $('lobbyStatus').textContent = n < 2 ? 'Send this code to one or two friends. Waiting…'
+      : n < MAX_PLAYERS ? `${n} of ${MAX_PLAYERS} at the gate. Begin now, or wait for one more.` : `${n} of ${MAX_PLAYERS}. The castle is full. Begin when you're ready.`;
+  } else $('lobbyStatus').textContent = `You're in ${lobbyNames.p1 || 'the host'}'s castle (${n} of ${MAX_PLAYERS}). Waiting for them to begin…`;
+}
 
 async function hostGame() {
   net?.close();
@@ -789,15 +842,17 @@ async function hostGame() {
   $('begin').hidden = false;
   $('roomCode').textContent = '····';
   $('lobbyStatus').textContent = 'Opening the gates…';
+  $('lobbyPlayers').innerHTML = '';
   $('begin').disabled = true;
   lobbyNames = { p1: myName() };
   net.onMessage = onNetMessage;
-  net.onOpen = () => { net.send({ t: 'hello', name: myName() }); $('lobbyStatus').textContent = 'Someone is at the gate…'; };
+  net.accept = () => !G; // nobody walks in mid-game
+  net.onOpen = () => { $('lobbyStatus').textContent = 'Someone is at the gate…'; };
   net.onClose = onDisconnect;
   try {
     const code = await net.host();
     $('roomCode').textContent = code;
-    $('lobbyStatus').textContent = 'Send this code to your friend. Waiting…';
+    showLobby();
   } catch (e) {
     $('lobbyStatus').textContent = "Couldn't reach the matchmaking server. Check your connection and try again.";
   }
@@ -806,12 +861,13 @@ async function joinGame(code) {
   if (!/^[A-Z0-9]{4}$/i.test(code)) { $('menuMsg').textContent = 'Codes are 4 letters/numbers.'; return; }
   net?.close();
   net = new Net();
-  lobbyNames = { p2: myName() };
+  lobbyNames = {};
   net.onMessage = onNetMessage;
   net.onClose = onDisconnect;
   show('lobby');
   $('roomCode').textContent = code.toUpperCase();
   $('lobbyStatus').textContent = 'Knocking…';
+  $('lobbyPlayers').innerHTML = '';
   $('begin').hidden = true;
   try {
     await net.join(code);
@@ -823,23 +879,22 @@ async function joinGame(code) {
     $('menuMsg').textContent = e?.type === 'peer-unavailable' ? 'No game with that code. Check it and try again.' : "Couldn't connect. Try again, or make sure the host is waiting in the lobby.";
   }
 }
-function onDisconnect() {
-  if (G && !G.ended) {
-    if (isHost()) {
-      if (G.remote) { G.status[G.remote.id] = 'gone'; G.remote.removeFrom(scene); }
-      showMsg('Your friend lost the connection. You are alone now.', 5);
-      $('partner').hidden = true;
-    } else emitLocalEnd('disconnect');
-  } else if (!G && !$('lobby').hidden) {
-    $('lobbyStatus').textContent = net?.isHost ? 'Your friend left. Waiting…' : 'The host closed the game.';
-    $('begin').disabled = true;
+function onDisconnect(id) {
+  if (net?.isHost) {
+    delete lobbyNames[id];
+    if (G && !G.ended) { if (G.status[id] && G.status[id] !== 'gone') emit({ k: 'left', id }); }
+    else if (!G && !$('lobby').hidden) shareLobby();
+    return;
   }
+  // a guest only ever loses the host
+  if (G && !G.ended) emitLocalEnd('disconnect');
+  else if (!G && !$('lobby').hidden) { $('lobbyStatus').textContent = 'The host closed the game.'; $('lobbyPlayers').innerHTML = ''; }
 }
 function emitLocalEnd(result) { showEnd({ result, status: G.status, time: G.time }); }
 function beginHosted() {
   if (!net?.connected) return;
   const seed = Math.floor(Math.random() * 1e9);
-  lobbyNames.p1 = myName();
+  lobbyNames = roster();
   net.send({ t: 'start', seed, names: lobbyNames });
   startGame({ seed, mode: 'host', localId: 'p1', names: { ...lobbyNames } });
 }
@@ -902,11 +957,11 @@ function updateScare(dt, t) {
       U.scare.value = 0; U.red.value = 0; U.invert.value = 0; U.blackout.value = 1; U.blur.value = 0;
       audio.tinnitus();
       $('deadTitle').textContent = 'Meegenomen';
-      const partnerAlive = G.remote && G.status[G.remote.id] === 'alive';
-      $('deadText').textContent = partnerAlive ? `He stuffed you in His sack. ${name(G.remote.id)} can still cut you down.` : 'He stuffed you in His sack.';
+      const helpers = remotes().filter((r) => G.status[r.id] === 'alive').map((r) => r.id);
+      $('deadText').textContent = helpers.length ? `He stuffed you in His sack. ${listNames(helpers)} can still cut you down.` : 'He stuffed you in His sack.';
       $('dead').hidden = false;
       // co-op: after a moment you watch your friend through their eyes. Solo: the end screen follows.
-      setTimeout(() => { if (G && !G.ended && G.remote && ['alive', 'escaping'].includes(G.status[G.remote.id])) { $('dead').hidden = true; U.blackout.value = 0; } }, 3800);
+      setTimeout(() => { if (G && !G.ended && othersIn().length) { $('dead').hidden = true; U.blackout.value = 0; } }, 3800);
     }
   } else {
     U.scare.value = Math.max(0, 0.85 - k * 0.35);
@@ -1091,16 +1146,18 @@ function updateGame(dt, t) {
   if (!G.ended) G.time += dt;
   const local = G.localId;
   const alive = meAlive();
-  // spectate when you're out but your friend isn't
-  const friendIn = G.remote && ['alive', 'escaping'].includes(G.status[G.remote.id]);
-  G.spectate = !alive && !G.scare && !G.escaping && !!friendIn && G.status[local] !== 'escaping';
+  // spectate when you're out but a friend isn't (click to switch between them)
+  const inside = othersIn();
+  if (!inside.some((r) => r.id === G.specId)) G.specId = inside[0]?.id ?? null;
+  const spec = G.specId ? G.remotes[G.specId] : null;
+  G.spectate = !alive && !G.scare && !G.escaping && !!spec && G.status[local] !== 'escaping';
   player.update(dt, input(), { locked: !alive || !!G.scare, cameraOverride: G.spectate || !!G.escaping });
   if (G.spectate) {
-    const r = G.remote.v;
+    const r = spec.v;
     camera.position.set(r.x, r.eye, r.z);
     camera.rotation.set(r.pitch, r.yaw, 0, 'YXZ');
     $('spectate').hidden = false;
-    $('spectate').textContent = `Watching ${name(G.remote.id)}`;
+    $('spectate').textContent = `Watching ${name(spec.id)}` + (inside.length > 1 ? ' · click to switch' : '');
   } else $('spectate').hidden = true;
   // escape cutscene: walk into the light
   if (G.escaping) {
@@ -1131,13 +1188,14 @@ function updateGame(dt, t) {
   W.elves.animate(dt, t, camera.position, elfSound);
   items.update(dt, t);
   C.update(t);
-  if (G.remote) {
-    const st = G.status[G.remote.id];
-    G.remote.update(dt, (st === 'alive' || st === 'escaping') && !G.spectate);
-    if (G.remote.stepAcc > 1.25 && st === 'alive') {
-      G.remote.stepAcc = 0;
-      const r = G.remote.v;
-      audio.footstep(G.remote.state.crouch ? 0.03 : G.remote.state.sprint ? 0.2 : 0.11, { x: r.x, y: 0.1, z: r.z }, occlFrom(r.x, r.z));
+  for (const rp of remotes()) {
+    const st = G.status[rp.id];
+    // while watching someone, hide only the one whose eyes you're looking through
+    rp.update(dt, (st === 'alive' || st === 'escaping') && !(G.spectate && G.specId === rp.id));
+    if (rp.stepAcc > 1.25 && st === 'alive') {
+      rp.stepAcc = 0;
+      const r = rp.v;
+      audio.footstep(rp.state.crouch ? 0.03 : rp.state.sprint ? 0.2 : 0.11, { x: r.x, y: 0.1, z: r.z }, occlFrom(r.x, r.z));
     }
   }
   // the sack cries out
@@ -1213,8 +1271,9 @@ function updateGame(dt, t) {
   if (!G.ended) audio.setMood(tension, chasing, G.scare ? 0 : near, clamp(1 - ds / 32, 0, 1));
   audio.tick();
   const danger = dead ? 0 : clamp(1 - ds / 13, 0, 1);
-  player.updateLight(dt, t, { danger, forceOn: G.spectate ? G.remote.state.flash : false });
-  if (G.spectate) player.light.intensity = G.remote.state.flash ? 60 : 0;
+  const specR = G.spectate ? G.remotes[G.specId] : null;
+  player.updateLight(dt, t, { danger, forceOn: specR ? specR.state.flash : false });
+  if (specR) { player.light.intensity = specR.state.flash ? 60 : 0; specR.light.intensity = 0; }
   if (G.scare) { player.light.intensity *= 0.05; player.fill.intensity = 0; }
   // a faint cold light to stand in when He's watching from far away
   G.watchLight ||= { x: 0, y: 2.6, z: 0, color: 0x8898b8, power: 0, range: 6, flicker: 0.08 };
@@ -1254,7 +1313,12 @@ function updateGame(dt, t) {
   G.sendT -= dt;
   if (net?.connected && G.sendT <= 0) {
     const me = [r2(player.pos.x), r2(player.pos.z), r2(player.yaw), r2(player.pitch), player.lightOn() ? 1 : 0, player.crouch ? 1 : 0, player.moving ? 1 : 0, player.sprinting ? 1 : 0];
-    if (isHost()) { G.sendT = 1 / 15; net.send({ t: 's', s: S.netState(), e: W.elves.netState(), p: me, st: G.status }); }
+    if (isHost()) {
+      G.sendT = 1 / 15;
+      const ps = { [G.localId]: me };
+      for (const r of remotes()) if (r.raw) ps[r.id] = r.raw;
+      net.send({ t: 's', s: S.netState(), e: W.elves.netState(), ps, st: G.status });
+    }
     else { G.sendT = 1 / 20; net.send({ t: 'p', p: me }); }
   }
   updateHud();
@@ -1347,10 +1411,17 @@ function updateHud() {
   set('batt', b, (v) => { $('batt').querySelector('i').style.width = v + '%'; $('batt').classList.toggle('low', v < 20); });
   const s = Math.round(player.stamina);
   set('stam', s, (v) => { $('stam').querySelector('i').style.width = v + '%'; $('stam').classList.toggle('full', v >= 100); });
-  if (G.remote) {
-    const st = G.status[G.remote.id];
-    const label = { alive: 'alive', taken: '<span class="taken">in the sack</span>', escaped: 'escaped', escaping: 'escaping', gone: 'disconnected' }[st] || st;
-    set('partner', st, () => { $('partner').innerHTML = `<b>${escapeHtml(name(G.remote.id))}</b> — ${label}`; });
+  if (G.mode !== 'solo') {
+    const ids = Object.keys(G.names).filter((id) => id !== G.localId).sort();
+    const key = ids.map((id) => id + G.status[id]).join();
+    set('partner', key, () => {
+      $('partner').innerHTML = ids.map((id) => {
+        const st = G.status[id];
+        const label = { alive: 'alive', taken: '<span class="taken">in the sack</span>', escaped: 'escaped', escaping: 'escaping', gone: 'disconnected' }[st] || st;
+        const [r, g, b] = TRAIL_RGB[id].map((c) => Math.round(Math.min(1, c * 1.6) * 255));
+        return `<div><i class="dot" style="background:rgb(${r},${g},${b})"></i><b>${escapeHtml(name(id))}</b> — ${label}</div>`;
+      }).join('');
+    });
   }
 }
 const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -1404,10 +1475,11 @@ function wireUi() {
     if (G.mode === 'solo') { const n = G.names; startGame({ seed: Math.floor(Math.random() * 1e9), mode: 'solo', localId: 'p1', names: n }); }
     else if (G.mode === 'host' && net?.connected) {
       const seed = Math.floor(Math.random() * 1e9);
-      if (G.remote) G.remote.removeFrom(scene);
+      clearRemotes();
       if (G.bow) camera.remove(G.bow);
-      net.send({ t: 'start', seed, names: G.names });
-      startGame({ seed, mode: 'host', localId: 'p1', names: G.names });
+      lobbyNames = roster();
+      net.send({ t: 'start', seed, names: lobbyNames });
+      startGame({ seed, mode: 'host', localId: 'p1', names: { ...lobbyNames } });
     }
   });
   $('toMenu').addEventListener('click', quitToMenu);
