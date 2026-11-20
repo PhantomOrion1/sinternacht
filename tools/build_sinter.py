@@ -256,7 +256,9 @@ VARIANTS = {
                            eyes__l_eye_push1_in=1, eyes__r_eye_push1_in=1, eyes__l_eye_push2_in=1, eyes__r_eye_push2_in=1,
                            head__head_scale_vert_incr=0.8, head__head_triangular=0.7, chin__chin_height_incr=1, chin__chin_jaw_drop_incr=1,
                            chin__chin_prominent_incr=1, nose__nose_scale_vert_incr=0.7, nose__nose_point_down=1,
-                           neck__neck_scale_vert_incr=1, neck__neck_scale_horiz_decr=1, mouth__mouth_scale_horiz_incr=0.6)},
+                           neck__neck_scale_vert_incr=1, neck__neck_scale_horiz_decr=1, mouth__mouth_scale_horiz_incr=0.6,
+                           # a huge upper body on thin legs
+                           torso__torso_scale_horiz_incr=1, torso__torso_vshape_incr=1, torso__torso_scale_depth_incr=0.8)},
         'robe': {'thick': 0.03, 'flare': 0.45, 'hem': 0.02, 'sleeve': 0.03, 'bell': 0.12},
     },
     'uncanny': {

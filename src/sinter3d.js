@@ -25,7 +25,7 @@ export const LOOKS = {
     iris: [20, 10, 8], pupil: 0.9, sclera: [8, 6, 6], bloodshot: 0, voidEyes: true, milky: 0,
     teeth: 0x4a4030, hair: [120, 116, 108], hairDirt: 0.8, beardL: 0.62, beardGap: 0.012, stache: [0.05, 0.1], beardNarrow: 0.7, beardThick: 0.012, beardCards: 150, hairL: 0.36, hairStyle: 'stringy',
     robe: [56, 6, 8], robeDirt: 1, robeTorn: 1, gold: [90, 70, 40], goldWorn: 0.9, mitreH: 0.62, mitreTilt: [-0.12, 0.1],
-    height: 1.0, stretch: { leg: 1.12, arm: 1.32, hand: 1.55, neck: 1.9, spine: 1.08 },
+    height: 1.1, stretch: { leg: 1.12, arm: 1.32, hand: 1.55, neck: 1.9, spine: 1.16 },
   },
   uncanny: {
     skin: [236, 210, 196], skinRough: 0.36, sheen: 0.45, mottle: 0.12, spots: 0, veins: 0.1, cracks: 0,
@@ -246,6 +246,22 @@ function weldedNormals(g) {
 }
 
 // ------------------------------------------------------------------ the character
+// painted textures are expensive; paint once per variant and share between builds
+const texMemo = {};
+const memo = (key, f) => (texMemo[key] ??= f());
+const dataCache = {};
+export function loadSinterData(name, base = 'assets/sinter/') {
+  return (dataCache[name] ??= Promise.all([
+    fetch(base + name + '.json').then((r) => r.json()),
+    fetch(base + name + '.bin').then((r) => r.arrayBuffer()),
+  ]).then(([header, buf]) => (dataCache[name] = { header, buf })));
+}
+// synchronous build once loadSinterData(name) has resolved
+export function makeSinter(name) {
+  const d = dataCache[name];
+  if (!d || d instanceof Promise) throw new Error('sinter data not loaded: ' + name);
+  return buildSinter(name, d.header, d.buf);
+}
 export async function loadSinter(name, base = 'assets/sinter/') {
   const [header, buf] = await Promise.all([
     fetch(base + name + '.json').then((r) => r.json()),
@@ -254,7 +270,7 @@ export async function loadSinter(name, base = 'assets/sinter/') {
   return buildSinter(name, header, buf);
 }
 
-function buildSinter(name, header, buf) {
+export function buildSinter(name, header, buf) {
   const L = LOOKS[name];
   const rng = makeRng(name.length * 977 + 13);
   const root = new THREE.Group();
@@ -299,7 +315,7 @@ function buildSinter(name, header, buf) {
   const chin = V3(header.bones.find((b) => b.name === 'jaw').tail);
 
   // --- skin: painted texture x regional vertex tint
-  const skinTex = paintSkin(L, 11 + name.length);
+  const skinTex = memo(name + ':skin', () => paintSkin(L, 11 + name.length));
   const skinMat = new THREE.MeshPhysicalMaterial({
     map: skinTex.map, normalMap: skinTex.normal, normalScale: new THREE.Vector2(L.cracks ? 0.6 : 0.35, L.cracks ? 0.6 : 0.35), roughness: L.skinRough,
     sheen: L.sheen, sheenColor: new THREE.Color(0.8, 0.35, 0.3), sheenRoughness: 0.5, vertexColors: true,
@@ -363,7 +379,7 @@ function buildSinter(name, header, buf) {
   }
 
   // --- the cassock: geometric folds, torn hem
-  const robeTex = paintRobe(L, 21, true), plainTex = paintRobe(L, 23, false);
+  const robeTex = memo(name + ':robe', () => paintRobe(L, 21, true)), plainTex = memo(name + ':plain', () => paintRobe(L, 23, false));
   const robeMat = new THREE.MeshPhysicalMaterial({ map: robeTex.map, normalMap: robeTex.normal, roughness: 0.92, sheen: 1, sheenRoughness: 0.55, sheenColor: new THREE.Color(...L.robe.map((v) => Math.min(1, v / 160))), side: THREE.DoubleSide });
   const robe = skinned(parts.robe, robeMat);
   {
@@ -382,8 +398,8 @@ function buildSinter(name, header, buf) {
 
   // --- hair. Beard and long hair are shells that follow the face and then hang under their own
   // weight, with clumps of hair cards laid along them; moustache and brows are cards combed along the skin.
-  const shellMat = new THREE.MeshStandardMaterial({ map: paintHairShell(L, 7), alphaTest: 0.45, side: THREE.DoubleSide, roughness: 0.82 });
-  const hairMat = new THREE.MeshStandardMaterial({ map: paintHair(L, 5), alphaTest: 0.32, alphaToCoverage: true, side: THREE.DoubleSide, roughness: 0.85 });
+  const shellMat = new THREE.MeshStandardMaterial({ map: memo(name + ':shell', () => paintHairShell(L, 7)), alphaTest: 0.45, side: THREE.DoubleSide, roughness: 0.82 });
+  const hairMat = new THREE.MeshStandardMaterial({ map: memo(name + ':hair', () => paintHair(L, 5)), alphaTest: 0.32, alphaToCoverage: true, side: THREE.DoubleSide, roughness: 0.85 });
   mats.push(shellMat, hairMat);
   const bsi = body.geometry.attributes.skinIndex.array, bsw = body.geometry.attributes.skinWeight.array;
   const roots = (test) => { const out = []; for (let i = 0; i < bp.length / 3; i++) if (test(bp[i * 3], bp[i * 3 + 1], bp[i * 3 + 2])) out.push(i); return out; };
@@ -525,7 +541,7 @@ function buildSinter(name, header, buf) {
   const eyes = [];
   const eyeMat = L.voidEyes
     ? new THREE.MeshBasicMaterial({ color: 0x000000 })
-    : new THREE.MeshPhysicalMaterial({ map: paintEye(L, 3), roughness: 0.04, clearcoat: 1, clearcoatRoughness: 0.02 });
+    : new THREE.MeshPhysicalMaterial({ map: memo(name + ':eye', () => paintEye(L, 3)), roughness: 0.04, clearcoat: 1, clearcoatRoughness: 0.02 });
   mats.push(eyeMat);
   for (const [c, nm] of [[eyeL, 'eye.L'], [eyeR, 'eye.R']]) {
     const holder = new THREE.Group();
@@ -541,7 +557,7 @@ function buildSinter(name, header, buf) {
   }
 
   // --- mitre
-  const mitreTex = paintMitre(L);
+  const mitreTex = memo(name + ':mitre', () => paintMitre(L));
   const mitreMat = new THREE.MeshPhysicalMaterial({ map: mitreTex, roughness: 0.75, sheen: 0.8, sheenColor: new THREE.Color(0.6, 0.1, 0.1) });
   mats.push(mitreMat);
   {
@@ -620,7 +636,7 @@ function buildSinter(name, header, buf) {
   function pose(dt, target) {
     state.t += dt;
     const t = state.t;
-    for (const b of bonesArr) b.quaternion.copy(b.userData.bindLocal);
+    resetPose();
     if (target) state.look.lerp(target, 1 - Math.exp(-6 * dt));
     // where is the viewer, relative to the head?
     B.head.getWorldPosition(headWorld);
@@ -661,6 +677,11 @@ function buildSinter(name, header, buf) {
       rot('lowerarm01.L', -0.9, 0.3, -0.4); rot('lowerarm01.R', -0.6, 0, 0.2);
       for (let f = 2; f <= 5; f++) { rot(`finger${f}-1.R`, 1.1); rot(`finger${f}-2.R`, 1.2); rot(`finger${f}-3.R`, 0.9); rot(`finger${f}-2.L`, 0.4); }
     }
+    finish(state.look);
+  }
+  function resetPose() { for (const b of bonesArr) b.quaternion.copy(b.userData.bindLocal); }
+  // after posing: crozier upright, eyes onto the target
+  function finish(look) {
     root.updateMatrixWorld(true);
     // the crozier stays upright, leaning a touch
     if (staffObj) {
@@ -672,12 +693,13 @@ function buildSinter(name, header, buf) {
     // eyes lock onto the viewer
     for (const e of eyes) {
       e.holder.updateWorldMatrix(true, false);
-      const lp = e.holder.worldToLocal(state.look.clone());
+      if (!look) break;
+      const lp = e.holder.worldToLocal(look.clone());
       const yy = Math.max(-0.6, Math.min(0.6, Math.atan2(lp.x, lp.z)));
       const pp = Math.max(-0.4, Math.min(0.4, Math.atan2(lp.y, Math.hypot(lp.x, lp.z))));
       e.ball.rotation.set(-pp, yy, 0, 'YXZ');
     }
   }
 
-  return { root, bones: B, skeleton, pose, title: header.meta.title, height: header.meta.height * L.height, name, mats };
+  return { root, bones: B, skeleton, pose, rot, resetPose, finish, eyes, staff: staffObj, title: header.meta.title, height: header.meta.height * L.height, name, mats };
 }

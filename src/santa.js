@@ -2,25 +2,11 @@
 // glassy eyes that follow you, a head that turns too far.
 import * as THREE from 'three';
 import { R, clamp, damp, dampAngle, angleDiff, lerp, makeRng } from './rng.js';
-import { makeHead, hairStrands } from './faces.js';
+import { makeSinter } from './sinter3d.js';
 
 export const SANTA_MODES = ['wander', 'investigate', 'notice', 'chase', 'search', 'feed', 'stunned', 'retreat', 'dead', 'watch'];
-const L1 = 0.72, L2 = 0.68, FOOT_H = 0.06, HEAD_R = 0.165;
 
-function limb(len, r0, r1, mat, seg = 8, up = false) {
-  const g = new THREE.CylinderGeometry(r0, r1, len, seg);
-  g.translate(0, up ? len / 2 : -len / 2, 0);
-  const m = new THREE.Mesh(g, mat);
-  m.castShadow = true;
-  return m;
-}
-function ball(r, mat, sx = 1, sy = 1, sz = 1, seg = 12) {
-  const g = new THREE.SphereGeometry(r, seg, Math.max(6, seg - 4));
-  g.scale(sx, sy, sz);
-  const m = new THREE.Mesh(g, mat);
-  m.castShadow = true;
-  return m;
-}
+const eyeTmp = new THREE.Vector3();
 const tmpQ = new THREE.Quaternion(), tmpQ2 = new THREE.Quaternion(), tmpE = new THREE.Euler(0, 0, 0, 'YXZ'), tmpV = new THREE.Vector3(), tmpV2 = new THREE.Vector3();
 
 export class Santa {
@@ -40,174 +26,26 @@ export class Santa {
   }
 
   // ------------------------------------------------------------------ model
+  // The Demonic Sinterklaas: MakeHuman body on a full skeleton (see sinter3d.js), driven bone by bone here.
   build(T) {
-    const rng = makeRng(4711);
-    const skin = new THREE.MeshStandardMaterial({ map: T.skin.map, normalMap: T.skin.normal, color: 0xe2d0c2, roughness: 0.42 });
-    const robe = new THREE.MeshStandardMaterial({ map: T.red.map, normalMap: T.red.normal, color: 0xb02020, roughness: 0.92 });
-    const gold = new THREE.MeshStandardMaterial({ map: T.gold.map, color: 0xd0a850, roughness: 0.35, metalness: 0.9 });
-    const black = new THREE.MeshBasicMaterial({ color: 0x050202 });
-    const hairM = new THREE.MeshStandardMaterial({ color: 0xbdb3a0, roughness: 0.9, side: THREE.DoubleSide });
-    const nail = new THREE.MeshStandardMaterial({ color: 0x8a7a68, roughness: 0.4 });
-    const capeM = new THREE.MeshStandardMaterial({ map: T.red.map, color: 0x8a1414, roughness: 1, side: THREE.DoubleSide });
-    const alb = new THREE.MeshStandardMaterial({ color: 0xbdb5a6, roughness: 0.95, side: THREE.DoubleSide });
-    this.mats = [skin, robe, gold, black, hairM, nail, capeM, alb];
-
-    const P = this.parts = {};
-    const body = P.body = new THREE.Group();
-    this.root.add(body);
-    const hips = P.hips = new THREE.Group();
-    body.add(hips);
-    // thin, bare, human legs — far too thin for what they carry
-    P.legs = [-1, 1].map((side) => {
-      const hip = new THREE.Group(); hip.position.set(side * 0.15, 0, 0);
-      hip.add(limb(L1, 0.06, 0.04, skin));
-      const knee = new THREE.Group(); knee.position.y = -L1; hip.add(knee);
-      knee.add(ball(0.05, skin, 1, 1.2, 1.15));
-      knee.add(limb(L2, 0.042, 0.025, skin));
-      const calf = ball(0.044, skin, 1, 2.4, 1); calf.position.set(0, -0.2, -0.014); knee.add(calf);
-      const ankle = new THREE.Group(); ankle.position.y = -L2; knee.add(ankle);
-      ankle.add(ball(0.032, skin));
-      const foot = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.05, 0.25), skin); foot.position.set(0, -0.032, 0.07); foot.castShadow = true; ankle.add(foot);
-      for (let k = 0; k < 4; k++) {
-        const toe = limb(0.09 + (k === 0 ? 0.03 : 0), 0.012, 0.009, skin, 5);
-        toe.rotation.x = -Math.PI / 2; toe.position.set((k - 1.5) * 0.019, -0.04, 0.19); ankle.add(toe);
-      }
-      hips.add(hip);
-      return { hip, knee, ankle };
-    });
-    // massive, hunched upper body in the bishop's robe
-    const torso = P.torso = new THREE.Group();
-    hips.add(torso);
-    const prof = [[0.11, 1.17], [0.27, 1.12], [0.45, 1.04], [0.5, 0.86], [0.46, 0.56], [0.39, 0.26], [0.34, 0.03], [0.39, -0.18], [0.44, -0.36], [0.47, -0.44]].map(([r, y]) => new THREE.Vector2(r, y));
-    const lg = new THREE.LatheGeometry(prof, 24);
-    const lp = lg.attributes.position;
-    for (let i = 0; i < lp.count; i++) {
-      const x = lp.getX(i), y = lp.getY(i), z = lp.getZ(i);
-      const a = Math.atan2(z, x);
-      const fold = 1 + Math.sin(a * 9) * 0.035 * (y < 0.6 ? 1 : 0.3);
-      const hem = y < -0.3 ? Math.sin(a * 5 + 1) * 0.06 : 0;
-      lp.setXYZ(i, x * fold * (z < 0 && y > 0.75 ? 1.06 : 1), y + hem, z * fold * 0.8);
-    }
-    lg.computeVertexNormals();
-    const robeMesh = new THREE.Mesh(lg, capeM); robeMesh.castShadow = true; torso.add(robeMesh);
-    const inner = ball(0.34, black, 1.15, 1.4, 0.8); inner.position.y = 0.55; torso.add(inner);
-    const hump = ball(0.24, robe, 1.3, 0.9, 0.8); hump.position.set(0.05, 0.92, -0.22); torso.add(hump);
-    const lace = new THREE.Mesh(new THREE.CylinderGeometry(0.46, 0.5, 0.14, 24, 1, true), alb); lace.scale.z = 0.8; lace.position.y = -0.5; torso.add(lace);
-    const trim = new THREE.Mesh(new THREE.TorusGeometry(0.44, 0.025, 5, 24), gold); trim.rotation.x = Math.PI / 2; trim.scale.set(1, 0.8, 1); trim.position.y = -0.4; torso.add(trim);
-    for (const sx of [-1, 1]) { const st = new THREE.Mesh(new THREE.BoxGeometry(0.11, 1.35, 0.025), gold); st.position.set(sx * 0.13, 0.45, 0.39); st.rotation.x = -0.06; torso.add(st); }
-    const collar = new THREE.Mesh(new THREE.TorusGeometry(0.15, 0.05, 6, 16), alb); collar.rotation.x = Math.PI / 2; collar.position.set(0, 1.13, 0.05); torso.add(collar);
-    P.cape = [];
-    for (let i = 0; i < 6; i++) {
-      const g = new THREE.PlaneGeometry(0.26, 1.45, 1, 6);
-      const p = g.attributes.position;
-      for (let k = 0; k < p.count; k++) if (p.getY(k) < -0.5) p.setY(k, p.getY(k) + Math.sin(i * 7 + p.getX(k) * 20) * 0.14);
-      g.translate(0, -0.72, 0);
-      const m = new THREE.Mesh(g, capeM); m.castShadow = true;
-      const pivot = new THREE.Group(); pivot.position.set(-0.38 + i * 0.15, 1.02, -0.32); pivot.rotation.y = (i - 2.5) * 0.12; pivot.add(m);
-      torso.add(pivot); P.cape.push(pivot);
-    }
-    // arms: human, with hands whose fingers are just a little too long
-    P.arms = [-1, 1].map((side) => {
-      const sh = new THREE.Group(); sh.position.set(side * 0.44, 0.98, 0.04); torso.add(sh);
-      const slv = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.2, 0.66, 12, 1, true), capeM);
-      slv.geometry.translate(0, -0.33, 0); slv.castShadow = true; sh.add(slv);
-      sh.add(limb(0.56, 0.05, 0.04, skin));
-      const elbow = new THREE.Group(); elbow.position.y = -0.56; sh.add(elbow);
-      elbow.add(ball(0.042, skin));
-      elbow.add(limb(0.52, 0.038, 0.03, skin));
-      const wrist = new THREE.Group(); wrist.position.y = -0.52; elbow.add(wrist);
-      const palm = new THREE.Mesh(new THREE.BoxGeometry(0.085, 0.11, 0.032), skin); palm.position.y = -0.055; palm.castShadow = true; wrist.add(palm);
-      const fingers = [];
-      for (let f = 0; f < 4; f++) {
-        const fr = new THREE.Group(); fr.position.set(-0.03 + f * 0.02, -0.11, 0); fr.rotation.z = (f - 1.5) * 0.05;
-        fr.add(limb(0.1, 0.0095, 0.0085, skin, 5));
-        const j = new THREE.Group(); j.position.y = -0.1; fr.add(j);
-        j.add(limb(0.09, 0.0085, 0.007, skin, 5));
-        const c = new THREE.Mesh(new THREE.ConeGeometry(0.007, 0.025, 4), nail); c.position.y = -0.1; c.rotation.x = Math.PI; j.add(c);
-        wrist.add(fr); fingers.push({ fr, j });
-      }
-      const th = new THREE.Group(); th.position.set(side * 0.045, -0.04, 0.015); th.rotation.z = side * 0.6;
-      th.add(limb(0.09, 0.011, 0.009, skin, 5)); wrist.add(th);
-      return { sh, elbow, wrist, fingers, side };
-    });
-    // crozier
-    const staff = new THREE.Group();
-    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 2.2, 6), gold); pole.position.y = 0.45; staff.add(pole);
-    const crook = new THREE.Mesh(new THREE.TorusGeometry(0.14, 0.022, 6, 18, Math.PI * 1.45), gold); crook.position.set(0.14, 1.6, 0); crook.rotation.z = -0.2; staff.add(crook);
-    staff.position.y = -0.1; staff.rotation.x = Math.PI; staff.rotation.z = 0.1;
-    P.arms[1].wrist.add(staff);
-    P.staff = staff;
-    // neck + the face
-    const neck = P.neck = new THREE.Group(); neck.position.set(0, 1.12, 0.1); torso.add(neck);
-    neck.add(limb(0.17, 0.07, 0.085, skin, 10, true));
-    const head = P.head = new THREE.Group(); head.position.y = 0.16; neck.add(head);
-    const F = P.face = makeHead({
-      seed: 7, w: 0.84, h: 1.16, d: 1.0, jawW: 0.78, nose: 1.25, noseLen: 1.12, cheek: 1.3, hollow: 1.6, brow: 1.3,
-      eyeGap: 1.04, eyeR: 0.158, eyeAsym: 0.45, lidUp: 36, lidDown: -34, iris: [150, 182, 205], irisR: 0.44, pupil: 0.2,
-      mouthW: 1.6, smile: 1.2, lip: 0.8, slit: 0.06, teeth: 0xcfc29a, gape: 1.6,
-      skin: [228, 208, 192], rouge: [210, 118, 118], lipCol: [180, 96, 102], browCol: [238, 234, 226], browThick: 1.9, browArch: 0.5,
-      wrinkles: 1, bags: 0.9, gloss: 0.36,
-    });
-    F.group.scale.setScalar(HEAD_R);
-    F.group.position.set(0, HEAD_R * 1.05, 0.015);
-    head.add(F.group);
-    this.mats.push(...F.mats);
-    // long matted white beard, hanging from the jaw (so it drops when the jaw does)
-    const mass = new THREE.SphereGeometry(1, 20, 16);
-    const mp = mass.attributes.position;
-    for (let i = 0; i < mp.count; i++) {
-      const x = mp.getX(i), y = mp.getY(i), z = mp.getZ(i);
-      const taper = y < 0 ? 1 + y * 0.75 : 1;
-      const lump = 1 + Math.sin(x * 9 + y * 5) * 0.06 + Math.sin(y * 13) * 0.04;
-      mp.setXYZ(i, x * 0.55 * taper * lump, y * 1.35, z * 0.32 * taper * lump);
-    }
-    mass.computeVertexNormals();
-    const beardMass = new THREE.Mesh(mass, hairM); beardMass.position.set(0, -2.15, 0.48); beardMass.rotation.x = 0.12; beardMass.castShadow = true;
-    F.jaw.add(beardMass);
-    const beard = hairStrands(110, (i) => {
-      const a = (rng.next() - 0.5) * (rng.chance(0.6) ? 1.5 : 2.5);
-      const centre = Math.abs(a) < 0.45;
-      const y = centre ? -0.68 - rng.range(0, 0.08) : -0.3 - Math.abs(a) * 0.25 - rng.range(0, 0.15);
-      return { x: Math.sin(a) * 0.7, y, z: Math.cos(a) * 0.72 * (centre ? 1.06 : 0.95), r: rng.range(0.07, 0.15), len: rng.range(1.4, 3.6) * (1 - Math.abs(a) * 0.18), rx: rng.range(0.05, 0.3), rz: rng.range(-0.18, 0.18) };
-    }, hairM);
-    F.jaw.add(beard);
-    // moustache sweeping off the corners of the grin
-    const stache = hairStrands(26, (i) => {
-      const s = i % 2 ? 1 : -1;
-      return { x: s * rng.range(0.1, 0.2), y: -0.26, z: 0.86, r: rng.range(0.025, 0.045), len: rng.range(0.35, 0.6), rz: s * rng.range(0.5, 0.8), rx: rng.range(0.25, 0.5) };
-    }, hairM);
-    F.group.add(stache);
-    // wispy hair below the mitre
-    const locks = hairStrands(70, () => {
-      const a = rng.range(0.6, Math.PI * 2 - 0.6) + Math.PI / 2;
-      return { x: Math.cos(a) * 0.86, y: rng.range(-0.05, 0.35), z: Math.sin(a) * 0.9 - 0.05, r: rng.range(0.03, 0.06), len: rng.range(1.2, 2.6), rx: -0.1, rz: Math.cos(a) * -0.2 };
-    }, hairM);
-    F.group.add(locks);
-    // the mitre
-    const shp = new THREE.Shape();
-    shp.moveTo(-0.15, 0); shp.lineTo(0.15, 0); shp.quadraticCurveTo(0.17, 0.3, 0, 0.5); shp.quadraticCurveTo(-0.17, 0.3, -0.15, 0);
-    const mg = new THREE.ExtrudeGeometry(shp, { depth: 0.2, bevelEnabled: true, bevelThickness: 0.015, bevelSize: 0.01, bevelSegments: 1, curveSegments: 8 });
-    mg.translate(0, 0, -0.1);
-    const mitre = new THREE.Group(); mitre.position.set(0.005, HEAD_R * 1.05 + 0.115, -0.01); mitre.rotation.set(-0.16, 0, 0.07); head.add(mitre);
-    const mitreM = new THREE.MeshStandardMaterial({ map: T.red.map, color: 0xd83030, roughness: 0.6, emissive: 0x200404 });
-    this.mats.push(mitreM);
-    const mm = new THREE.Mesh(mg, mitreM); mm.castShadow = true; mitre.add(mm);
-    const band = new THREE.Mesh(new THREE.BoxGeometry(0.33, 0.05, 0.25), gold); band.position.y = 0.02; mitre.add(band);
-    const vb = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.44, 0.015), gold); vb.position.set(0, 0.24, 0.115); mitre.add(vb);
-    const cr1 = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.14, 0.02), gold); cr1.position.set(0, 0.3, 0.125); mitre.add(cr1);
-    const cr2 = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.03, 0.02), gold); cr2.position.set(0, 0.33, 0.125); mitre.add(cr2);
-    for (const sx of [-1, 1]) { const lp2 = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.42, 0.01), robe); lp2.position.set(sx * 0.07, -0.2, -0.13); lp2.rotation.x = 0.15; mitre.add(lp2); }
-    // eyeshine: a faint glint in the dark so you know where He is
-    const glowMat = new THREE.SpriteMaterial({ map: T.glow, color: 0xffd8a0, blending: THREE.AdditiveBlending, depthWrite: false, fog: false, opacity: 0.6 });
+    const M = this.model = makeSinter('demonic');
+    this.root.add(M.root);
+    this.mats = [...M.mats];
+    const B = M.bones;
+    this.parts = { torso: B.spine02, hips: B.spine05 || B.root, head: B.head };
+    // eyeshine: a dying ember deep in each socket, so you know where He is in the dark
+    const glowMat = new THREE.SpriteMaterial({ map: T.glow, color: 0xff5020, blending: THREE.AdditiveBlending, depthWrite: false, fog: false, opacity: 0.6 });
     this.glowMat = glowMat; this.mats.push(glowMat);
-    P.glows = F.eyes.map((e) => {
+    this.parts.glows = M.eyes.map((e) => {
       const s = new THREE.Sprite(glowMat);
-      s.position.copy(e.holder.position).multiplyScalar(1).add(new THREE.Vector3(0, 0, F.o.eyeR * 0.9));
-      s.scale.setScalar(0.3);
-      F.group.add(s);
+      s.position.set(0, 0, 0.004);
+      s.scale.setScalar(0.06);
+      e.holder.add(s);
       return s;
     });
-    this.root.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+    M.root.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+    this.feet = [B['foot.L'], B['foot.R']];
+    this.toes = [B['toe1-1.L'] || B['foot.L'], B['toe1-1.R'] || B['foot.R']];
   }
 
   // ------------------------------------------------------------------ net
@@ -527,15 +365,20 @@ export class Santa {
   hitSpheres() {
     const P = this.parts;
     this.root.updateMatrixWorld(true);
-    const a = P.torso.localToWorld(tmpV.set(0, 0.55, 0)).clone();
-    const b = P.face.group.getWorldPosition(tmpV).clone();
-    const c = P.hips.getWorldPosition(tmpV).clone();
-    return [[a, 0.65], [b, 0.22], [c, 0.34]];
+    const a = P.torso.getWorldPosition(new THREE.Vector3());
+    const b = this.headWorld(new THREE.Vector3());
+    const c = P.hips.getWorldPosition(new THREE.Vector3());
+    return [[a, 0.62], [b, 0.24], [c, 0.4]];
   }
-  headWorld(out) { return this.parts.face.group.localToWorld(out.set(0, -0.15, 0.85)); }
+  // between the eyes
+  headWorld(out) {
+    const e = this.model.eyes;
+    e[0].holder.getWorldPosition(out);
+    return out.add(e[1].holder.getWorldPosition(eyeTmp)).multiplyScalar(0.5);
+  }
 
   animate(dt, t, camPos) {
-    const s = this.s, v = this.v, P = this.parts, C = this.castle;
+    const s = this.s, v = this.v, P = this.parts, C = this.castle, M = this.model, rot = M.rot;
     const mode = s.mode;
     if (this.isHost) { v.x = s.x; v.z = s.z; v.yaw = s.yaw; }
     else {
@@ -547,7 +390,7 @@ export class Santa {
     const chase = mode === 'chase';
     const dead = mode === 'dead';
     v.reach = damp(v.reach, chase ? (s.style === 'stalk' ? 1 : s.style === 'crawl' ? 0 : 0.6) : mode === 'notice' ? 0.5 : mode === 'feed' ? 0.7 : 0, 6, dt);
-    // duck under door lintels
+    // He is far too tall for the doorways: fold down under the lintels
     const [cx, cy] = C.cellAt(v.x, v.z);
     let dd = 9;
     for (let d = 0; d < 4; d++) {
@@ -555,11 +398,9 @@ export class Santa {
       const [mx, mz] = C.edgeMid(cx, cy, d);
       dd = Math.min(dd, Math.hypot(mx - v.x, mz - v.z));
     }
-    v.duck = damp(v.duck, clamp(1 - (dd - 0.7) / 1.5, 0, 1), 8, dt);
+    v.duck = damp(v.duck, clamp(1 - (dd - 0.8) / 1.7, 0, 1), 8, dt);
     if (dead) v.death = Math.min(1.6, v.death + dt * 0.55);
-    // eyes always find you
-    if (camPos) P.face.look(camPos, 0.62);
-    // stop-motion: when stalking, the pose updates in jerky 11fps steps
+    // stop-motion: when standing still, the pose updates in jerky 11fps steps
     const style = chase ? s.style || 'run' : 'walk';
     const stepped = !chase && !this.scare && mode !== 'stunned' && mode !== 'watch' && s.speed < 0.3;
     v.accum = (v.accum || 0) + dt;
@@ -572,13 +413,14 @@ export class Santa {
     const amp = speed > 0.05 ? (running ? 1.0 + 0.3 * Math.min(1, (speed - 3) / 2.5) : 0.6 + 0.45 * Math.min(1, speed / 4.5)) : 0;
     v.amp = damp(v.amp || 0, amp, 6, pdt);
     v.crawl = damp(v.crawl || 0, crawling ? 1 : 0, 5, pdt);
-    if (speed > 0.05) v.phase += (speed * pdt * Math.PI) / ((running ? 1.6 : crawling ? 0.9 : 1.15) * Math.max(0.5, v.amp));
+    // long legs: a longer stride per cycle
+    if (speed > 0.05) v.phase += (speed * pdt * Math.PI) / ((running ? 2.0 : crawling ? 1.0 : 1.4) * Math.max(0.5, v.amp));
     // twitches
     this.nextTwitch -= pdt;
     if (this.nextTwitch <= 0 && !dead) {
-      this.nextTwitch = chase ? R(0.25, 0.7) : R(0.7, 2.8);
+      this.nextTwitch = chase ? R(0.25, 0.7) : R(0.5, 2.2);
       const kind = Math.random();
-      this.twitches.push({ kind: kind < 0.45 ? 'head' : kind < 0.75 ? 'arm' : 'shudder', amt: (Math.random() < 0.5 ? -1 : 1) * R(0.5, 1.3), side: Math.random() < 0.5 ? 0 : 1, t: 0, dur: R(0.25, 0.9) });
+      this.twitches.push({ kind: kind < 0.5 ? 'head' : kind < 0.78 ? 'arm' : 'shudder', amt: (Math.random() < 0.5 ? -1 : 1) * R(0.5, 1.3), side: Math.random() < 0.5 ? 0 : 1, t: 0, dur: R(0.2, 0.8) });
     }
     let twHead = 0, twArm = [0, 0], shudder = 0;
     for (const tw of this.twitches) {
@@ -589,92 +431,97 @@ export class Santa {
       else shudder += e;
     }
     this.twitches = this.twitches.filter((tw) => tw.t < tw.dur);
-    // legs (human knees, stiff stride)
-    const duck = Math.min(1.3, v.duck + (mode === 'feed' ? 0.55 : 0) + (dead ? v.death * 0.8 : 0));
-    let maxDrop = 0;
-    P.legs.forEach((leg, i) => {
+
+    M.resetPose();
+    const SD = ['L', 'R'];
+    // legs: thin, human knees, stiff stride
+    const duck = Math.min(1.4, v.duck + (mode === 'feed' ? 0.55 : 0) + (dead ? v.death * 0.8 : 0));
+    const run = running ? 1 : 0, cr = v.crawl;
+    for (let i = 0; i < 2; i++) {
       const ph = v.phase + i * Math.PI;
       const sw = Math.sin(ph) * v.amp, lift = Math.max(0, Math.cos(ph)) * v.amp;
-      const run = running ? 1 : 0, cr = v.crawl;
-      const a1 = lerp(-0.04 - duck * 0.75 + sw * (0.42 + run * 0.25) - run * 0.1, -1.25 + sw * 0.4, cr);
-      const a2 = lerp(0.1 + duck * 1.35 + lift * (1.0 + run * 0.7), 2.0 - lift * 0.4, cr);
-      leg.hip.rotation.set(a1, 0, (i ? -1 : 1) * (0.03 + duck * 0.07));
-      leg.knee.rotation.x = a2;
-      leg.ankle.rotation.x = -(a1 + a2) + lift * 0.3;
-      const drop = L1 * Math.cos(a1) + L2 * Math.cos(a1 + a2) + FOOT_H;
-      maxDrop = Math.max(maxDrop, drop);
+      const a1 = lerp(0.04 + duck * 0.7 - sw * (0.42 + run * 0.25) + run * 0.1, 1.25 - sw * 0.4, cr);
+      const a2 = lerp(0.1 + duck * 1.3 + lift * (1.0 + run * 0.7), 2.0 - lift * 0.4, cr);
+      rot(`upperleg01.${SD[i]}`, -a1, 0, (i ? -1 : 1) * (0.03 + duck * 0.08));
+      rot(`lowerleg01.${SD[i]}`, a2);
+      rot(`foot.${SD[i]}`, -(a2 - a1) * 0.85 - lift * 0.3);
       const planted = Math.cos(ph) < 0;
-      if (planted && !v.lastPlant[i] && v.amp > 0.3 && this.onStep) this.onStep(v.x, v.z, chase ? 1.2 : 0.8);
+      if (planted && !v.lastPlant[i] && v.amp > 0.3 && this.onStep) this.onStep(v.x, v.z, chase ? 1.3 : 0.9);
       v.lastPlant[i] = planted;
-    });
-    P.hips.position.y = maxDrop + (running ? Math.abs(Math.cos(v.phase)) * 0.08 : 0) - (dead ? Math.max(0, v.death - 0.9) * 1.1 : 0);
-    // torso
-    const lean = lerp(0.3 + duck * 0.45 + v.reach * 0.35 + (running ? 0.25 : 0) + (dead ? v.death * 0.55 : 0), 1.4, v.crawl);
-    P.torso.rotation.set(lean, Math.sin(v.phase) * 0.1 * v.amp, Math.sin(v.phase) * 0.05 * v.amp + (dead ? v.death * 0.35 : 0));
-    P.body.position.set(shudder * R(-0.03, 0.03), 0, shudder * R(-0.03, 0.03));
-    // arms
-    P.arms.forEach((arm, i) => {
+    }
+    // torso: huge, hunched, swaying over the thin legs
+    const lean = lerp(0.22 + duck * 0.62 + v.reach * 0.3 + (running ? 0.22 : 0) + (dead ? v.death * 0.55 : 0), 1.35, cr);
+    const swayY = Math.sin(v.phase) * 0.12 * v.amp, swayZ = Math.sin(v.phase) * 0.06 * v.amp + (dead ? v.death * 0.35 : 0);
+    for (const n of ['spine04', 'spine03', 'spine02', 'spine01']) rot(n, lean / 4, swayY / 4, swayZ / 4);
+    rot('clavicle.L', 0, 0, 0.22 + v.reach * 0.1); rot('clavicle.R', 0, 0, -0.22 - v.reach * 0.1);
+    // arms: far too long, hanging past the knees
+    const armDown = 0.66;
+    for (let i = 0; i < 2; i++) {
+      const sg = i ? 1 : -1; // z sign that lowers this arm out of the A-pose
       const opp = Math.sin(v.phase + (i ? 0 : Math.PI)) * v.amp;
-      const hang = -lean + opp * 0.3 + twArm[i] * 0.6;
-      const reachA = -lean - 1.4 + Math.sin(t * 9 + i) * 0.1;
+      const hang = -lean + opp * 0.3 + twArm[i] * 0.5;
+      const reachA = -lean - 1.3 + Math.sin(t * 9 + i) * 0.1;
       const feedA = -lean - 0.8;
       let ax = lerp(hang, mode === 'feed' ? feedA : reachA, v.reach);
-      if (running) ax = lerp(-lean + opp * 1.1 - 0.2, reachA, 0.25);
-      if (mode === 'stunned') ax = -lean - 2.6 + Math.sin(t * 20 + i) * 0.3;
-      ax = lerp(ax, -lean - 0.25 + opp * 0.6, v.crawl); // crawling: long arms pulling along the floor
-      arm.sh.rotation.set(ax, 0, (i ? -1 : 1) * (0.1 + v.reach * 0.2));
-      arm.elbow.rotation.x = -0.12 - v.reach * 0.3 - (i === 1 && v.reach < 0.5 ? 0.35 : 0);
-      arm.wrist.rotation.x = -0.15 + v.reach * 0.25;
+      if (running) ax = lerp(-lean - opp * 1.0 - 0.15, reachA, 0.25);
+      if (mode === 'stunned') ax = -lean - 2.5 + Math.sin(t * 20 + i) * 0.3;
+      ax = lerp(ax, -lean - 0.35 - opp * 0.6, cr); // crawling: long arms pulling along the floor
+      let az = sg * (armDown - v.reach * 0.25);
+      if (mode === 'stunned') az = sg * 0.2;
+      rot(`upperarm01.${SD[i]}`, ax, 0, az);
+      rot(`lowerarm01.${SD[i]}`, -0.15 - v.reach * 0.3 - (i === 1 && v.reach < 0.5 ? 0.3 : 0));
+      rot(`wrist.${SD[i]}`, -0.15 + v.reach * 0.25);
       const curl = v.reach > 0.5 ? 0.1 + Math.sin(t * 14 + i) * 0.12 : 0.35 + Math.sin(t * 1.3 + i * 2) * 0.15;
-      arm.fingers.forEach((f, k) => {
-        const c = i === 1 && v.reach < 0.5 ? 1.2 : curl + (twArm[i] ? Math.sin(k * 3 + t * 30) * 0.4 : 0);
-        f.fr.rotation.x = c * 0.6; f.j.rotation.x = c;
-      });
-    });
-    P.staff.visible = !dead && v.reach < 0.5;
-    P.cape.forEach((c, i) => { c.rotation.x = 0.1 + speed * 0.06 + Math.sin(t * 2.2 + i * 1.7) * 0.05; });
-    // neck/head: hold the head in world space, the way an owl does
-    P.neck.rotation.set(0.45 + duck * 0.2, 0, 0);
-    let hy = v.headYaw, hp = v.headPitch, hz = twHead * 0.6 + Math.sin(t * 0.7) * 0.12;
-    if (chase) { hz += Math.sin(t * 31) * 0.1; hy += Math.sin(t * 23) * 0.06; }
+      const grip = i === 1 && v.reach < 0.5 && !dead;
+      for (let f = 1; f <= 5; f++) {
+        const c = grip && f > 1 ? 1.1 : curl + (twArm[i] ? Math.sin(f * 3 + t * 30) * 0.4 : 0);
+        rot(`finger${f}-1.${SD[i]}`, c * 0.5); rot(`finger${f}-2.${SD[i]}`, c); rot(`finger${f}-3.${SD[i]}`, c * 0.8);
+      }
+    }
+    // neck pushed forward from the shoulders
+    rot('neck01', 0.32 + duck * 0.2, 0, 0); rot('neck02', 0.1);
+    // jaw: hangs open, wider when he wants you
+    let jaw = 0.18 + Math.sin(t * 2.1) * 0.03 + v.reach * 0.2 + (mode === 'notice' ? 0.4 : 0) + (mode === 'feed' ? 0.25 + Math.sin(t * 16) * 0.2 : 0) + (mode === 'stunned' ? 0.5 : 0) + (dead ? 0.4 * Math.min(1, v.death) : 0);
+    if (chase) jaw += Math.sin(t * 19) * 0.05;
+    let hy = v.headYaw, hp = v.headPitch, hz = 0.16 + twHead * 0.3 + Math.sin(t * 0.7) * 0.06; // head cocked, always
+    if (chase) { hz += Math.sin(t * 31) * 0.08; hy += Math.sin(t * 23) * 0.05; }
     if (mode === 'stunned') { hp = 0.8; hz += Math.sin(t * 25) * 0.4; }
-    if (mode === 'watch') { hz = Math.sin(t * 0.35) * 0.9; hy = Math.sin(t * 0.21) * 0.25; hp = -0.15 + Math.sin(t * 0.5) * 0.1; P.body.position.x += Math.sin(t * 0.6) * 0.06; }
+    if (mode === 'watch') { hz = 0.2 + Math.sin(t * 0.35) * 0.4; hy = Math.sin(t * 0.21) * 0.25; hp = -0.1 + Math.sin(t * 0.5) * 0.1; }
     if (dead) hp = 1.1 * Math.min(1, v.death);
-    // the grin never changes; the jaw does
-    let jaw = 0.02 + Math.sin(t * 2.7) * 0.015 + v.reach * 0.25 + (mode === 'notice' ? 0.55 : 0) + (mode === 'feed' ? 0.3 + Math.sin(t * 16) * 0.25 : 0) + (mode === 'stunned' ? 0.8 : 0) + (dead ? 0.6 * Math.min(1, v.death) : 0);
-    if (chase) jaw += Math.sin(t * 19) * 0.06;
     if (this.scare) {
-      jaw = 0.72 + Math.sin(t * 40) * 0.05;
-      hy = 0; hp = 0; hz = R(-0.25, 0.25);
-      v.reach = 1;
-    }
-    P.face.setJaw(Math.max(0, jaw));
-    // a rare, slow blink
-    v.blinkT -= pdt;
-    if (v.blinkT <= 0 && v.blink < 0) { v.blink = 0; v.blinkT = R(7, 16); }
-    if (v.blink >= 0) { v.blink += pdt; P.face.blink(Math.sin(Math.min(1, v.blink / 0.5) * Math.PI)); if (v.blink > 0.5) { v.blink = -1; P.face.blink(0); } }
-    this.place();
-    P.neck.updateWorldMatrix(true, false);
-    P.neck.getWorldQuaternion(tmpQ);
-    tmpE.set(-hp, v.yaw + hy, hz, 'YXZ');
-    tmpQ2.setFromEuler(tmpE);
-    P.head.quaternion.copy(tmpQ.invert().multiply(tmpQ2));
-    // eyeshine
-    const glow = dead ? Math.max(0, 1 - v.death) : this.scare ? 0 : chase || mode === 'watch' ? 1 : 0.55;
-    this.glowMat.opacity = glow * (0.85 + Math.random() * 0.15);
-    this.glowMat.color.setHex(chase ? 0xff6040 : 0xffe0b0);
-    P.glows.forEach((g) => g.scale.setScalar(chase ? 0.42 : mode === 'watch' ? 0.45 : 0.3));
-    if (this.scare) {
+      jaw = 0.62 + Math.sin(t * 40) * 0.05;
+      hy = 0; hp = 0; hz = 0.15 + R(-0.25, 0.25);
       // arms flung forward and wide, fingers splayed, reaching for the lens
-      P.arms.forEach((arm, i) => {
-        arm.sh.rotation.set(-lean - 1.35 + Math.sin(t * 23 + i) * 0.05, (i ? 0.25 : -0.25), (i ? -1 : 1) * 1.05);
-        arm.elbow.rotation.x = -0.25; arm.wrist.rotation.set(-0.6, 0, 0);
-        arm.fingers.forEach((f, k) => { f.fr.rotation.set(0.05, 0, (k - 1.5) * 0.25); f.j.rotation.x = 0.1; });
-      });
-      P.staff.visible = false;
-      if (camPos) P.face.look(camPos, 0.62);
-      this.placeForScare(t);
+      for (let i = 0; i < 2; i++) {
+        const sg = i ? 1 : -1;
+        rot(`upperarm01.${SD[i]}`, -lean - 0.9 + Math.sin(t * 23 + i) * 0.05, 0, -sg * 0.35);
+        rot(`lowerarm01.${SD[i]}`, -0.2); rot(`wrist.${SD[i]}`, -0.5);
+        for (let f = 1; f <= 5; f++) { rot(`finger${f}-1.${SD[i]}`, 0.05, 0, 0); rot(`finger${f}-2.${SD[i]}`, 0.1); rot(`finger${f}-3.${SD[i]}`, 0.1); }
+      }
     }
+    rot('jaw', Math.max(0, jaw));
+    M.staff.visible = !dead && v.reach < 0.5 && !this.scare;
+    // place, then stand the feet on the floor
+    this.place();
+    M.root.position.set(shudder * R(-0.03, 0.03) + (mode === 'watch' ? Math.sin(t * 0.6) * 0.06 : 0), 0, shudder * R(-0.03, 0.03));
+    this.root.updateMatrixWorld(true);
+    let low = Infinity;
+    for (const b of [...this.feet, ...this.toes]) low = Math.min(low, b.getWorldPosition(tmpV).y);
+    M.root.position.y = 0.07 - low + (running ? Math.abs(Math.cos(v.phase)) * 0.06 : 0) - (dead ? Math.max(0, v.death - 0.9) * 1.1 : 0);
+    // head: held in world space, the way an owl does
+    this.root.updateMatrixWorld(true);
+    const head = P.head;
+    head.parent.getWorldQuaternion(tmpQ);
+    tmpQ2.setFromEuler(tmpE.set(-hp + 0.05, v.yaw + hy, -hz, 'YXZ')).multiply(head.userData.bindWorld);
+    // the model root may be scaled but not rotated relative to this.root, so the world rotation is enough
+    head.quaternion.copy(tmpQ.invert().multiply(tmpQ2));
+    M.finish(camPos ? tmpV.copy(camPos) : null);
+    // eyeshine
+    const glow = dead ? Math.max(0, 1 - v.death) : this.scare ? 0 : chase || mode === 'watch' ? 1 : 0.6;
+    this.glowMat.opacity = glow * (0.85 + Math.random() * 0.15);
+    this.glowMat.color.setHex(chase ? 0xff3010 : 0xff7040);
+    P.glows.forEach((g) => g.scale.setScalar(chase ? 0.09 : mode === 'watch' ? 0.1 : 0.06));
+    if (this.scare) this.placeForScare(t);
   }
   place() {
     this.root.position.set(this.v.x, 0, this.v.z);
@@ -700,6 +547,5 @@ export class Santa {
   dispose() {
     this.root.traverse((o) => o.geometry?.dispose());
     this.mats.forEach((m) => m.dispose());
-    this.parts.face.dispose();
   }
 }

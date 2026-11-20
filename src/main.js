@@ -9,6 +9,7 @@ import { buildTextures, setAnisotropy, scareFace } from './textures.js';
 import { Castle, CELL, WALL_H } from './castle.js';
 import { AudioEngine } from './audio.js';
 import { Santa } from './santa.js';
+import { loadSinterData } from './sinter3d.js';
 import { Elves } from './elves.js';
 import { Items, PART_NAMES, buildCrossbow } from './items.js';
 import { Player, RemotePlayer } from './player.js';
@@ -221,7 +222,14 @@ document.addEventListener('mousemove', (e) => {
 });
 document.addEventListener('mousedown', (e) => { if (locked() && e.button === 0) shoot(); });
 renderer.domElement.addEventListener('click', () => { if (G && !G.ended) lock(); });
+function toggleFullscreen() {
+  const d = document, el = d.documentElement;
+  if (d.fullscreenElement || d.webkitFullscreenElement) (d.exitFullscreen || d.webkitExitFullscreen).call(d);
+  else (el.requestFullscreen || el.webkitRequestFullscreen)?.call(el)?.catch?.(() => {});
+}
+$('fsBtn').addEventListener('click', (e) => { e.stopPropagation(); toggleFullscreen(); e.currentTarget.blur(); });
 document.addEventListener('pointerlockchange', () => {
+  document.body.classList.toggle('playing', locked());
   if (!G || G.ended) return;
   if (locked()) { $('paused').hidden = true; G.paused = false; }
   else {
@@ -1409,6 +1417,7 @@ async function boot() {
   wireUi();
   await new Promise((r) => setTimeout(r, 30));
   T = buildTextures();
+  await loadSinterData('demonic');
   const fc = scareFace(512);
   const sf = $('scareface').getContext('2d');
   sf.drawImage(fc, 0, 0);

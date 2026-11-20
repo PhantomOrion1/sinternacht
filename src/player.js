@@ -175,8 +175,9 @@ export class RemotePlayer {
     const a = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.045, 0.55, 6), coat); a.rotation.x = Math.PI / 2; a.position.z = -0.25; arm.add(a);
     const torch = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.035, 0.18, 8), new THREE.MeshStandardMaterial({ color: 0x111111, metalness: 0.6 }));
     torch.rotation.x = Math.PI / 2; torch.position.z = -0.55; arm.add(torch);
-    this.lens = new THREE.Sprite(new THREE.SpriteMaterial({ map: T.glow, color: 0xfff0d8, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }));
-    this.lens.scale.setScalar(0.25); this.lens.position.z = -0.66; arm.add(this.lens);
+    // seen from your side, a teammate's torch is a small glint, not a glare
+    this.lens = new THREE.Sprite(new THREE.SpriteMaterial({ map: T.glow, color: 0xfff0d8, blending: THREE.AdditiveBlending, depthWrite: false, fog: false, opacity: 0.35 }));
+    this.lens.scale.setScalar(0.14); this.lens.position.z = -0.66; arm.add(this.lens);
     this.arm = arm;
     this.group.add(body, head, arm);
     this.tag = label(name || 'Friend'); this.tag.position.y = 2.0; this.group.add(this.tag);
@@ -217,7 +218,7 @@ export class RemotePlayer {
     this.light.position.set(v.x, v.eye - 0.2, v.z).addScaledVector(fwd, 0.5);
     this.target.position.copy(this.light.position).addScaledVector(fwd, 10);
     this.target.updateMatrixWorld();
-    this.light.intensity = on ? 80 : 0;
+    this.light.intensity = on ? 24 : 0;
   }
   eyePos() { return { x: this.v.x, y: this.v.eye, z: this.v.z }; }
 }
