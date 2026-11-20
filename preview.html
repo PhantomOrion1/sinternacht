@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sinterklaas Lineup</title>
+<meta name="description" content="Compare the three Sinterklaas character designs under the game's lighting.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IM+Fell+English:ital@0;1&family=IM+Fell+English+SC&display=swap" rel="stylesheet">
+<script type="importmap">{ "imports": { "three": "./vendor/three.module.js", "three/addons/": "./vendor/addons/" } }</script>
+<style>
+  :root { --bone: #d9cfbf; --dim: #8a8174; --gold: #c8a050; --blood: #d42a1a; color-scheme: dark; }
+  html, body { margin: 0; height: 100%; background: #000; color: var(--bone); font-family: 'IM Fell English', Georgia, serif; overflow: hidden; }
+  #view { position: fixed; inset: 0; }
+  header { position: fixed; top: 14px; left: 18px; right: 18px; display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; pointer-events: none; }
+  h1 { font-family: 'IM Fell English SC', Georgia, serif; font-weight: 400; margin: 0; font-size: 24px; letter-spacing: 0.12em; }
+  header p { margin: 4px 0 0; color: var(--dim); font-style: italic; font-size: 14px; }
+  .tools { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; pointer-events: auto; }
+  button { font: 15px 'IM Fell English SC', Georgia, serif; color: var(--bone); background: rgba(0,0,0,0.55); border: 1px solid #3a332c; padding: 6px 12px; cursor: pointer; }
+  button.on { border-color: var(--gold); color: #fff; }
+  button:hover { border-color: var(--blood); }
+  #labels { position: fixed; left: 0; right: 0; bottom: 18px; display: flex; justify-content: center; gap: 12px; flex-wrap: wrap; padding: 0 12px; }
+  #labels button { font-size: 17px; padding: 8px 16px; }
+  #labels small { display: block; font: italic 12px 'IM Fell English', Georgia, serif; color: var(--dim); }
+  #loading { position: fixed; inset: 0; display: grid; place-items: center; font-style: italic; color: var(--dim); }
+  @media (max-width: 640px) { header { flex-direction: column; } h1 { font-size: 20px; } }
+</style>
+</head>
+<body>
+<div id="view"></div>
+<div id="loading">Summoning Him three times…</div>
+<header>
+  <div>
+    <h1>Sinterklaas — three designs</h1>
+    <p>Drag to orbit · scroll to zoom · click a name to walk up to Him</p>
+  </div>
+  <div class="tools">
+    <button data-light="flash" class="on">Flashlight</button>
+    <button data-light="torch">Torchlight</button>
+    <button data-light="moon">Moonlight</button>
+    <button data-light="studio">Studio</button>
+    <button id="spin">Turn them</button>
+  </div>
+</header>
+<div id="labels"></div>
+<script type="module" src="src/preview.js"></script>
+</body>
+</html>
